@@ -12,6 +12,7 @@ using DiscordChatExporter.Core.Discord.Data;
 using DiscordChatExporter.Core.Exceptions;
 using DiscordChatExporter.Core.Utils;
 using Gress;
+using HttpCloak;
 using JsonExtensions.Http;
 using JsonExtensions.Reading;
 using PowerKit.Extensions;
@@ -21,10 +22,32 @@ namespace DiscordChatExporter.Core.Discord;
 public class DiscordClient(
     string token,
     RateLimitPreference rateLimitPreference = RateLimitPreference.RespectAll
-)
+) : IDisposable
 {
+    private const int JsonParseRetryAttempts = 5;
+
     private readonly Uri _baseUri = new("https://discord.com/api/v10/", UriKind.Absolute);
+    private readonly Session _session = new(preset: Presets.ChromeLatest, retry: 0);
+    private readonly DiscordUserClientProfile _userClientProfile = new();
     private TokenKind? _resolvedTokenKind;
+
+    private static HttpResponseMessage ToHttpResponseMessage(Response source, Uri requestUri)
+    {
+        var response = new HttpResponseMessage((HttpStatusCode)source.StatusCode)
+        {
+            Content = new ByteArrayContent(source.Content),
+            ReasonPhrase = source.Reason,
+            RequestMessage = new HttpRequestMessage(HttpMethod.Get, requestUri),
+        };
+
+        foreach (var (name, values) in source.Headers)
+        {
+            if (!response.Headers.TryAddWithoutValidation(name, values))
+                response.Content.Headers.TryAddWithoutValidation(name, values);
+        }
+
+        return response;
+    }
 
     private async ValueTask<HttpResponseMessage> GetResponseAsync(
         string url,
@@ -34,20 +57,40 @@ public class DiscordClient(
         await Http.ResponseResiliencePipeline.ExecuteAsync(
             async innerCancellationToken =>
             {
-                using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(_baseUri, url));
+                var requestUri = new Uri(_baseUri, url);
+                var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["Authorization"] = tokenKind == TokenKind.Bot ? $"Bot {token}" : token,
+                };
 
-                // Don't validate because the token can have special characters
-                // https://github.com/Tyrrrz/DiscordChatExporter/issues/828
-                request.Headers.TryAddWithoutValidation(
-                    "Authorization",
-                    tokenKind == TokenKind.Bot ? $"Bot {token}" : token
-                );
+                HttpResponseMessage response;
 
-                var response = await Http.Client.SendAsync(
-                    request,
-                    HttpCompletionOption.ResponseHeadersRead,
-                    innerCancellationToken
-                );
+                if (tokenKind == TokenKind.Bot)
+                {
+                    using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+                    foreach (var (name, value) in headers)
+                        request.Headers.TryAddWithoutValidation(name, value);
+
+                    response = await Http.Client.SendAsync(
+                        request,
+                        HttpCompletionOption.ResponseHeadersRead,
+                        innerCancellationToken
+                    );
+                }
+                else
+                {
+                    // User-token requests use the browser-like header profile plus a Chrome TLS
+                    // fingerprint. Bot-token requests intentionally keep the normal HttpClient path.
+                    await _userClientProfile.AddHeadersAsync(headers, innerCancellationToken);
+
+                    var cloakResponse = await _session.GetAsync(
+                        requestUri.ToString(),
+                        headers: headers,
+                        cancellationToken: innerCancellationToken
+                    );
+
+                    response = ToHttpResponseMessage(cloakResponse, requestUri);
+                }
 
                 // Discord has advisory rate limits (communicated via response headers), but they are typically
                 // way stricter than the actual rate limits enforced by the server.
@@ -65,21 +108,10 @@ public class DiscordClient(
                         ?.Pipe(s => double.ParseOrNull(s, CultureInfo.InvariantCulture))
                         ?.Pipe(TimeSpan.FromSeconds);
 
-                    // If this was the last request available before hitting the rate limit,
-                    // wait out the reset time so that future requests can succeed.
-                    // This may add an unnecessary delay in case the user doesn't intend to
-                    // make any more requests, but implementing a smarter solution would
-                    // require properly keeping track of Discord's global/per-route/per-resource
-                    // rate limits and that's just way too much effort.
-                    // https://discord.com/developers/docs/topics/rate-limits
                     if (remainingRequestCount <= 0 && resetAfterDelay is not null)
                     {
                         var delay =
-                            // Adding a small buffer to the reset time reduces the chance of getting
-                            // rate limited again, because it allows for more requests to be released.
                             (resetAfterDelay.Value + TimeSpan.FromSeconds(1))
-                            // Sometimes Discord returns an absurdly high value for the reset time, which
-                            // is not actually enforced by the server. So we cap it at a reasonable value.
                             .Clamp(TimeSpan.Zero, TimeSpan.FromSeconds(60));
 
                         await Task.Delay(delay, innerCancellationToken);
@@ -131,46 +163,72 @@ public class DiscordClient(
             cancellationToken
         );
 
+    private static TimeSpan GetJsonParseRetryDelay(int attempt) =>
+        TimeSpan.FromSeconds(Math.Min(8, Math.Pow(2, Math.Max(0, attempt - 1))));
+
     private async ValueTask<JsonElement> GetJsonResponseAsync(
         string url,
         CancellationToken cancellationToken = default
     )
     {
-        using var response = await GetResponseAsync(url, cancellationToken);
+        JsonException? lastJsonException = null;
 
-        if (!response.IsSuccessStatusCode)
+        for (var attempt = 1; attempt <= JsonParseRetryAttempts; attempt++)
         {
-            throw response.StatusCode switch
+            using var response = await GetResponseAsync(url, cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
             {
-                HttpStatusCode.Unauthorized => throw new DiscordChatExporterException(
-                    "Authentication token is invalid.",
-                    true
-                ),
+                throw response.StatusCode switch
+                {
+                    HttpStatusCode.Unauthorized => throw new DiscordChatExporterException(
+                        "Authentication token is invalid.",
+                        true
+                    ),
 
-                HttpStatusCode.Forbidden => throw new DiscordChatExporterException(
-                    $"Request to '{url}' failed: forbidden."
-                ),
+                    HttpStatusCode.Forbidden => throw new DiscordChatExporterException(
+                        $"Request to '{url}' failed: forbidden."
+                    ),
 
-                HttpStatusCode.NotFound => throw new DiscordChatExporterException(
-                    $"Request to '{url}' failed: not found."
-                ),
+                    HttpStatusCode.NotFound => throw new DiscordChatExporterException(
+                        $"Request to '{url}' failed: not found."
+                    ),
 
-                _ => throw new DiscordChatExporterException(
-                    $"""
-                    Request to '{url}' failed: {response
-                        .StatusCode.ToString()
-                        .SeparateWords(' ')
-                        .ToLowerInvariant()}.
-                    Response content: {await response.Content.ReadAsStringAsync(
-                        cancellationToken
-                    )}
-                    """,
-                    true
-                ),
-            };
+                    _ => throw new DiscordChatExporterException(
+                        $"""
+                        Request to '{url}' failed: {response
+                            .StatusCode.ToString()
+                            .SeparateWords(' ')
+                            .ToLowerInvariant()}.
+                        Response content: {await response.Content.ReadAsStringAsync(
+                            cancellationToken
+                        )}
+                        """,
+                        true
+                    ),
+                };
+            }
+
+            try
+            {
+                return await response.Content.ReadAsJsonAsync(cancellationToken);
+            }
+            catch (JsonException ex)
+            {
+                lastJsonException = ex;
+
+                if (attempt >= JsonParseRetryAttempts)
+                    break;
+
+                await Task.Delay(GetJsonParseRetryDelay(attempt), cancellationToken);
+            }
         }
 
-        return await response.Content.ReadAsJsonAsync(cancellationToken);
+        throw new DiscordChatExporterException(
+            $"Discord returned malformed or truncated JSON for '{url}' after {JsonParseRetryAttempts} attempts.",
+            false,
+            lastJsonException
+        );
     }
 
     private async ValueTask<JsonElement?> TryGetJsonResponseAsync(
@@ -178,10 +236,34 @@ public class DiscordClient(
         CancellationToken cancellationToken = default
     )
     {
-        using var response = await GetResponseAsync(url, cancellationToken);
-        return response.IsSuccessStatusCode
-            ? await response.Content.ReadAsJsonAsync(cancellationToken)
-            : null;
+        JsonException? lastJsonException = null;
+
+        for (var attempt = 1; attempt <= JsonParseRetryAttempts; attempt++)
+        {
+            using var response = await GetResponseAsync(url, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+                return null;
+
+            try
+            {
+                return await response.Content.ReadAsJsonAsync(cancellationToken);
+            }
+            catch (JsonException ex)
+            {
+                lastJsonException = ex;
+
+                if (attempt >= JsonParseRetryAttempts)
+                    break;
+
+                await Task.Delay(GetJsonParseRetryDelay(attempt), cancellationToken);
+            }
+        }
+
+        throw new DiscordChatExporterException(
+            $"Discord returned malformed or truncated JSON for '{url}' after {JsonParseRetryAttempts} attempts.",
+            false,
+            lastJsonException
+        );
     }
 
     public async ValueTask<Application> GetApplicationAsync(
@@ -876,4 +958,6 @@ public class DiscordClient(
                 yield break;
         }
     }
+
+    public void Dispose() => _session.Dispose();
 }
