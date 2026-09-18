@@ -30,7 +30,7 @@ public class DiscordClient(
 
     private readonly Uri _baseUri = new("https://discord.com/api/v10/", UriKind.Absolute);
     private readonly HttpClient _httpClient = Http.Client;
-    private readonly Session _session = new(preset: Presets.ChromeLatest, retry: 0);
+    private readonly Session _session = new(preset: Presets.ChromeLatestWindows, retry: 0);
     private readonly DiscordUserClientProfile _userClientProfile = new();
     private readonly Func<TimeSpan, CancellationToken, ValueTask> _delayAsync = static (
         delay,
