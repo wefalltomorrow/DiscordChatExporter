@@ -49,14 +49,14 @@ servers to portable files, with support for Discord markdown and rich media.
 
 For user-token requests, this fork combines:
 
-- **HttpCloak Chrome TLS/browser transport** adapted from DiscordChatExporterPlus.
+- **HttpCloak Chrome TLS/browser transport on Windows** adapted from DiscordChatExporterPlus.
 - A locally generated **official-web-style X-Super-Properties** profile based on upstream PR #1582.
 - Matching browser User-Agent, locale/timezone headers, session-scoped launch identifiers, and a
   best-effort current Discord web build-number lookup.
 - No dependency on a third-party client-properties API.
 - Bot-token requests remain on the normal HttpClient path.
 
-These changes improve request consistency; they are not a guarantee against account restrictions.
+These changes improve request consistency; they are not a guarantee against account restrictions. On Linux, this fork deliberately falls back to the normal managed HTTP transport because HttpCloak's in-process .NET native binding has a currently open host-crash issue under some workloads.
 
 ### Optional resilient PowerShell wrapper
 
