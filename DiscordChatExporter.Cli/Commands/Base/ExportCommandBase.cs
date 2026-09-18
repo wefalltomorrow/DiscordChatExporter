@@ -498,12 +498,22 @@ public abstract class ExportCommandBase : DiscordCommandBase
                         {
                             errorsByChannel[channel] = ex.Message;
                         }
+                        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                        {
+                            // Output failures such as a locked file or full disk should fail only
+                            // this channel, not tear down an otherwise resumable batch.
+                            errorsByChannel[channel] = ex.Message;
+                        }
                     }
                 );
             });
 
-        // Print the result
-        var successfulThisRunCount = exportJobs.Count - errorsByChannel.Count;
+        // Print the result. Some errors may have happened while building requests for
+        // channels that never became export jobs, so count attempted failures separately.
+        var attemptedChannels = exportJobs.Select(job => job.Channel).ToHashSet();
+        var attemptedErrorCount = errorsByChannel.Keys.Count(attemptedChannels.Contains);
+        var successfulThisRunCount = exportJobs.Count - attemptedErrorCount;
+
         using (console.WithForegroundColor(ConsoleColor.White))
         {
             await console.Output.WriteLineAsync(
@@ -583,7 +593,7 @@ public abstract class ExportCommandBase : DiscordCommandBase
 
         // Fail the command only if ALL channels failed to export.
         // If only some channels failed to export, it's okay.
-        if (exportJobs.Count > 0 && errorsByChannel.Count >= exportJobs.Count)
+        if (exportJobs.Count > 0 && attemptedErrorCount >= exportJobs.Count)
             throw new CommandException("Export failed.");
     }
 
