@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using DiscordChatExporter.Core.Discord.Data;
 using DiscordChatExporter.Core.Discord.Data.Embeds;
+using DiscordChatExporter.Core.Discord.Data.Polls;
 using DiscordChatExporter.Core.Exporting.Conversion;
 using DiscordChatExporter.Core.Markdown.Parsing;
 using JsonExtensions.Writing;
@@ -339,6 +340,13 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
 
         _writer.WriteEndArray();
 
+        // Poll
+        if (message.Poll is not null)
+        {
+            _writer.WritePropertyName("poll");
+            await WritePollAsync(message.Poll, cancellationToken);
+        }
+
         // Inline emoji
         _writer.WriteStartArray("inlineEmojis");
 
@@ -358,6 +366,57 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
         }
 
         _writer.WriteEndArray();
+
+        _writer.WriteEndObject();
+        await _writer.FlushAsync(cancellationToken);
+    }
+
+    private async ValueTask WritePollAsync(
+        Poll poll,
+        CancellationToken cancellationToken = default
+    )
+    {
+        _writer.WriteStartObject();
+
+        _writer.WriteString("question", poll.Question);
+        _writer.WriteString("expiresAt", poll.ExpiresAt?.Pipe(Context.NormalizeDate));
+        _writer.WriteBoolean("allowsMultipleAnswers", poll.AllowsMultipleAnswers);
+
+        _writer.WriteStartArray("answers");
+        foreach (var answer in poll.Answers)
+        {
+            _writer.WriteStartObject();
+            _writer.WriteNumber("id", answer.Id);
+            _writer.WriteString("text", answer.Text);
+
+            if (answer.Emoji is not null)
+            {
+                _writer.WritePropertyName("emoji");
+                await WriteEmojiAsync(answer.Emoji, cancellationToken);
+            }
+
+            _writer.WriteEndObject();
+        }
+        _writer.WriteEndArray();
+
+        if (poll.Results is not null)
+        {
+            _writer.WriteStartObject("results");
+            _writer.WriteBoolean("isFinalized", poll.Results.IsFinalized);
+
+            _writer.WriteStartArray("answers");
+            foreach (var answerResult in poll.Results.Answers)
+            {
+                _writer.WriteStartObject();
+                _writer.WriteNumber("id", answerResult.Id);
+                _writer.WriteNumber("count", answerResult.Count);
+                _writer.WriteBoolean("didCurrentUserVote", answerResult.DidCurrentUserVote);
+                _writer.WriteEndObject();
+            }
+            _writer.WriteEndArray();
+
+            _writer.WriteEndObject();
+        }
 
         _writer.WriteEndObject();
         await _writer.FlushAsync(cancellationToken);
@@ -774,6 +833,12 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
         foreach (var user in message.MentionedUsers)
             await WriteUserAsync(user, true, cancellationToken);
         _writer.WriteEndArray();
+
+        if (message.Poll is not null)
+        {
+            _writer.WritePropertyName("poll");
+            await WritePollAsync(message.Poll, cancellationToken);
+        }
 
         _writer.WriteStartArray("inlineEmojis");
         foreach (
