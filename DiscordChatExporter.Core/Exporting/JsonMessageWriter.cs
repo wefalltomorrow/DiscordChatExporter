@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using DiscordChatExporter.Core.Discord.Data;
 using DiscordChatExporter.Core.Discord.Data.Embeds;
+using DiscordChatExporter.Core.Exporting.Conversion;
 using DiscordChatExporter.Core.Markdown.Parsing;
 using JsonExtensions.Writing;
 using PowerKit.Extensions;
@@ -30,44 +31,37 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
         }
     );
 
-    private async ValueTask<string> FormatMarkdownAsync(
-        string markdown,
-        CancellationToken cancellationToken = default
-    ) =>
-        Context.Request.ShouldFormatMarkdown
-            ? await PlainTextMarkdownVisitor.FormatAsync(Context, markdown, cancellationToken)
-            : markdown;
-
     private async ValueTask WriteUserAsync(
         User user,
         bool includeRoles = true,
         CancellationToken cancellationToken = default
     )
     {
+        var member = Context.TryGetMember(user.Id);
+        var roles = Context.GetUserRoles(user.Id);
+        var color = roles.FirstOrDefault(r => r.Color is not null)?.Color;
+
         _writer.WriteStartObject();
 
         _writer.WriteString("id", user.Id.ToString());
         _writer.WriteString("name", user.Name);
         _writer.WriteString("discriminator", user.DiscriminatorFormatted);
 
-        _writer.WriteString(
-            "nickname",
-            Context.TryGetMember(user.Id)?.DisplayName ?? user.DisplayName
-        );
+        _writer.WriteString("nickname", member?.DisplayName ?? user.DisplayName);
 
-        _writer.WriteString("color", Context.TryGetUserColor(user.Id)?.ToHexString());
+        _writer.WriteString("color", color?.ToHexString());
         _writer.WriteBoolean("isBot", user.IsBot);
 
         if (includeRoles)
         {
             _writer.WritePropertyName("roles");
-            await WriteRolesAsync(Context.GetUserRoles(user.Id), cancellationToken);
+            await WriteRolesAsync(roles, cancellationToken);
         }
 
         _writer.WriteString(
             "avatarUrl",
             await Context.ResolveAssetUrlAsync(
-                Context.TryGetMember(user.Id)?.AvatarUrl ?? user.AvatarUrl,
+                member?.AvatarUrl ?? user.AvatarUrl,
                 cancellationToken
             )
         );
@@ -132,6 +126,17 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
             await Context.ResolveAssetUrlAsync(attachment.Url, cancellationToken)
         );
         _writer.WriteString("fileName", attachment.FileName);
+        _writer.WriteString("description", attachment.Description);
+        if (attachment.Width is { } width)
+            _writer.WriteNumber("width", width);
+        else
+            _writer.WriteNull("width");
+
+        if (attachment.Height is { } height)
+            _writer.WriteNumber("height", height);
+        else
+            _writer.WriteNull("height");
+
         _writer.WriteNumber("fileSizeBytes", attachment.FileSize.TotalBytes);
 
         _writer.WriteEndObject();
@@ -252,10 +257,12 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
         _writer.WriteStartObject();
 
         _writer.WriteString("name", await FormatMarkdownAsync(embedField.Name, cancellationToken));
+        _writer.WriteString("nameRaw", embedField.Name);
         _writer.WriteString(
             "value",
             await FormatMarkdownAsync(embedField.Value, cancellationToken)
         );
+        _writer.WriteString("valueRaw", embedField.Value);
         _writer.WriteBoolean("isInline", embedField.IsInline);
 
         _writer.WriteEndObject();
@@ -273,12 +280,15 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
             "title",
             await FormatMarkdownAsync(embed.Title ?? "", cancellationToken)
         );
+        _writer.WriteString("titleRaw", embed.Title);
+        _writer.WriteString("type", embed.Kind.ToString());
         _writer.WriteString("url", embed.Url);
         _writer.WriteString("timestamp", embed.Timestamp?.Pipe(Context.NormalizeDate));
         _writer.WriteString(
             "description",
             await FormatMarkdownAsync(embed.Description ?? "", cancellationToken)
         );
+        _writer.WriteString("descriptionRaw", embed.Description);
 
         if (embed.Color is not null)
             _writer.WriteString("color", embed.Color.Value.ToHexString());
@@ -337,7 +347,7 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
             foreach (
                 var emoji in MarkdownParser
                     .ExtractEmojis(embed.Description)
-                    .DistinctBy(e => e.Name, StringComparer.Ordinal)
+                    .DistinctBy(e => (e.Id, e.Name, e.IsAnimated))
             )
             {
                 await WriteEmojiAsync(
@@ -369,6 +379,61 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
         );
 
         _writer.WriteEndObject();
+    }
+
+    private async ValueTask WriteConversionDataAsync(CancellationToken cancellationToken = default)
+    {
+        _writer.WriteStartObject("conversionData");
+        _writer.WriteNumber("schemaVersion", ConversionData.CurrentSchemaVersion);
+
+        _writer.WriteStartArray("members");
+        foreach (var (id, member) in Context.CachedMembers.OrderBy(m => m.Key.Value))
+        {
+            if (member is null)
+                continue;
+
+            _writer.WriteStartObject();
+            _writer.WriteString("id", id.ToString());
+            _writer.WriteString("displayName", member.DisplayName ?? member.User.DisplayName);
+            _writer.WriteString("avatarUrl", member.AvatarUrl ?? member.User.AvatarUrl);
+            _writer.WriteString("colorHex", Context.TryGetUserColor(id)?.ToHexString());
+            _writer.WriteStartArray("roleIds");
+            foreach (var roleId in member.RoleIds)
+                _writer.WriteStringValue(roleId.ToString());
+            _writer.WriteEndArray();
+            _writer.WriteEndObject();
+        }
+        _writer.WriteEndArray();
+
+        _writer.WriteStartArray("roles");
+        foreach (var (_, role) in Context.CachedRoles.OrderBy(r => r.Key.Value))
+        {
+            _writer.WriteStartObject();
+            _writer.WriteString("id", role.Id.ToString());
+            _writer.WriteString("name", role.Name);
+            _writer.WriteString("colorHex", role.Color?.ToHexString());
+            _writer.WriteNumber("position", role.Position);
+            _writer.WriteEndObject();
+        }
+        _writer.WriteEndArray();
+
+        _writer.WriteStartArray("channels");
+        foreach (var (id, channel) in Context.CachedChannels.OrderBy(c => c.Key.Value))
+        {
+            if (channel is null)
+                continue;
+
+            _writer.WriteStartObject();
+            _writer.WriteString("id", id.ToString());
+            _writer.WriteString("name", channel.Name);
+            _writer.WriteString("type", channel.Kind.ToString());
+            _writer.WriteBoolean("isVoice", channel.IsVoice);
+            _writer.WriteEndObject();
+        }
+        _writer.WriteEndArray();
+
+        _writer.WriteEndObject();
+        await _writer.FlushAsync(cancellationToken);
     }
 
     public override async ValueTask WritePreambleAsync(
@@ -441,6 +506,7 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
         // Metadata
         _writer.WriteString("id", message.Id.ToString());
         _writer.WriteString("type", message.Kind.ToString());
+        _writer.WriteNumber("flags", (int)message.Flags);
         _writer.WriteString("timestamp", Context.NormalizeDate(message.Timestamp));
         _writer.WriteString(
             "timestampEdited",
@@ -456,6 +522,7 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
         if (message.IsSystemNotification)
         {
             _writer.WriteString("content", message.GetFallbackContent());
+            _writer.WriteString("contentRaw", message.Content);
         }
         else
         {
@@ -463,6 +530,7 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
                 "content",
                 await FormatMarkdownAsync(message.Content, cancellationToken)
             );
+            _writer.WriteString("contentRaw", message.Content);
         }
 
         // Author
@@ -546,6 +614,10 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
             _writer.WriteEndObject();
         }
 
+        // Referenced message
+        if (message.ReferencedMessage is not null)
+            await WriteReferencedMessageAsync(message.ReferencedMessage, cancellationToken);
+
         // Forwarded message
         if (message.ForwardedMessage is not null)
         {
@@ -565,6 +637,7 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
                 "content",
                 await FormatMarkdownAsync(message.ForwardedMessage.Content, cancellationToken)
             );
+            _writer.WriteString("contentRaw", message.ForwardedMessage.Content);
 
             // Forwarded attachments
             _writer.WriteStartArray("attachments");
@@ -586,6 +659,20 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
             foreach (var sticker in message.ForwardedMessage.Stickers)
                 await WriteStickerAsync(sticker, cancellationToken);
 
+            _writer.WriteEndArray();
+
+            _writer.WriteStartArray("inlineEmojis");
+            foreach (
+                var emoji in MarkdownParser
+                    .ExtractEmojis(message.ForwardedMessage.Content)
+                    .DistinctBy(e => (e.Id, e.Name, e.IsAnimated))
+            )
+            {
+                await WriteEmojiAsync(
+                    new Emoji(emoji.Id, emoji.Name, emoji.IsAnimated),
+                    cancellationToken
+                );
+            }
             _writer.WriteEndArray();
 
             _writer.WriteEndObject();
@@ -611,7 +698,7 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
         foreach (
             var emoji in MarkdownParser
                 .ExtractEmojis(message.Content)
-                .DistinctBy(e => e.Name, StringComparer.Ordinal)
+                .DistinctBy(e => (e.Id, e.Name, e.IsAnimated))
         )
         {
             await WriteEmojiAsync(
@@ -626,6 +713,85 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
         await _writer.FlushAsync(cancellationToken);
     }
 
+    private async ValueTask WriteReferencedMessageAsync(
+        Message message,
+        CancellationToken cancellationToken = default
+    )
+    {
+        _writer.WriteStartObject("referencedMessage");
+
+        _writer.WriteString("id", message.Id.ToString());
+        _writer.WriteString("type", message.Kind.ToString());
+        _writer.WriteNumber("flags", (int)message.Flags);
+        _writer.WriteString("timestamp", Context.NormalizeDate(message.Timestamp));
+        _writer.WriteString(
+            "timestampEdited",
+            message.EditedTimestamp?.Pipe(Context.NormalizeDate)
+        );
+        _writer.WriteString(
+            "callEndedTimestamp",
+            message.CallEndedTimestamp?.Pipe(Context.NormalizeDate)
+        );
+        _writer.WriteBoolean("isPinned", message.IsPinned);
+        _writer.WriteString(
+            "content",
+            await FormatMarkdownAsync(message.Content, cancellationToken)
+        );
+        _writer.WriteString("contentRaw", message.Content);
+
+        _writer.WritePropertyName("author");
+        await WriteUserAsync(message.Author, true, cancellationToken);
+
+        _writer.WriteStartArray("attachments");
+        foreach (var attachment in message.Attachments)
+            await WriteAttachmentAsync(attachment, cancellationToken);
+        _writer.WriteEndArray();
+
+        _writer.WriteStartArray("embeds");
+        foreach (var embed in message.Embeds)
+            await WriteEmbedAsync(embed, cancellationToken);
+        _writer.WriteEndArray();
+
+        _writer.WriteStartArray("stickers");
+        foreach (var sticker in message.Stickers)
+            await WriteStickerAsync(sticker, cancellationToken);
+        _writer.WriteEndArray();
+
+        _writer.WriteStartArray("reactions");
+        foreach (var reaction in message.Reactions)
+        {
+            _writer.WriteStartObject();
+            _writer.WritePropertyName("emoji");
+            await WriteEmojiAsync(reaction.Emoji, cancellationToken);
+            _writer.WriteNumber("count", reaction.Count);
+            _writer.WriteStartArray("users");
+            _writer.WriteEndArray();
+            _writer.WriteEndObject();
+        }
+        _writer.WriteEndArray();
+
+        _writer.WriteStartArray("mentions");
+        foreach (var user in message.MentionedUsers)
+            await WriteUserAsync(user, true, cancellationToken);
+        _writer.WriteEndArray();
+
+        _writer.WriteStartArray("inlineEmojis");
+        foreach (
+            var emoji in MarkdownParser
+                .ExtractEmojis(message.Content)
+                .DistinctBy(e => (e.Id, e.Name, e.IsAnimated))
+        )
+        {
+            await WriteEmojiAsync(
+                new Emoji(emoji.Id, emoji.Name, emoji.IsAnimated),
+                cancellationToken
+            );
+        }
+        _writer.WriteEndArray();
+
+        _writer.WriteEndObject();
+    }
+
     public override async ValueTask WritePostambleAsync(
         CancellationToken cancellationToken = default
     )
@@ -634,6 +800,8 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
         _writer.WriteEndArray();
 
         _writer.WriteNumber("messageCount", MessagesWritten);
+
+        await WriteConversionDataAsync(cancellationToken);
 
         // Root object (end)
         _writer.WriteEndObject();

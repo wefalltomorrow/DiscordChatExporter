@@ -13,5 +13,7 @@ public partial class MessageFilter
 {
     public static MessageFilter Null { get; } = new NullMessageFilter();
 
+    public static MessageFilter FromAuthor(string value) => new FromMessageFilter(value);
+
     public static MessageFilter Parse(string value) => FilterGrammar.Filter.Parse(value);
 }
