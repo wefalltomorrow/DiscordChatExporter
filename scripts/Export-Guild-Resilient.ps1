@@ -1,13 +1,18 @@
 # Export-Guild-Resilient.ps1
 #
-# Resilient whole-guild wrapper for DiscordChatExporter.Cli.
+# Native-resume wrapper for this DiscordChatExporter fork.
 #
-# Exports channels one at a time, keeps persistent completion state,
-# retries transient/truncated-response failures, remembers 403/404 skips,
-# and redraws percentage updates on one console line.
+# Unlike the original per-channel workaround, this script runs "exportguild" so channels that
+# cannot be resolved through /channels/{id} can still be exported from the guild channel list.
+# The fork's native --resume support checkpoints each successful channel to manifest.json.
+# If the process fails or only some channels fail, the next pass skips verified completed
+# channels and retries only the unfinished work.
 #
 # Example:
 #   .\Export-Guild-Resilient.ps1 -Token $env:DCE_TOKEN -GuildId 123456789012345678 -OutputDirectory "C:\Discord Exports\My Server" -Format Csv
+#
+# Extra DCE options can be appended after --, for example:
+#   .\Export-Guild-Resilient.ps1 ... -- --media --reuse-media --include-threads all
 
 [CmdletBinding()]
 param(
@@ -22,16 +27,25 @@ param(
 
     [string]$DceExe,
 
-    [ValidateSet('HtmlDark', 'HtmlLight', 'PlainText', 'Csv', 'Json')]
+    [ValidateSet('HtmlDark', 'HtmlLight', 'PlainText', 'Csv', 'Json', 'Db')]
     [string]$Format = 'Csv',
 
+    [ValidateRange(1, 128)]
+    [int]$Parallel = 1,
+
+    [ValidateRange(1, 100)]
+    [int]$MaxPartialFailurePasses = 10,
+
+    [ValidateRange(1, 100)]
+    [int]$MaxProcessFailureAttempts = 10,
+
+    [ValidateRange(1, 300)]
     [int]$MaxRetryDelaySeconds = 30,
 
-    [int]$MaxUnknownErrorAttempts = 5,
+    [switch]$ResetState,
 
-    [ConsoleColor]$ProgressColor = [ConsoleColor]::Cyan,
-
-    [switch]$ResetState
+    [Parameter(ValueFromRemainingArguments)]
+    [string[]]$AdditionalArguments
 )
 
 $ErrorActionPreference = 'Stop'
@@ -49,7 +63,7 @@ if ([string]::IsNullOrWhiteSpace($DceExe)) {
     )
 
     $DceExe = $LocalCandidates |
-        Where-Object { Test-Path -LiteralPath $_ } |
+        Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
         Select-Object -First 1
 
     if (-not $DceExe) {
@@ -60,64 +74,36 @@ if ([string]::IsNullOrWhiteSpace($DceExe)) {
     }
 }
 
-if (-not $DceExe -or -not (Test-Path -LiteralPath $DceExe)) {
+if (-not $DceExe -or -not (Test-Path -LiteralPath $DceExe -PathType Leaf)) {
     throw 'DiscordChatExporter.Cli.exe was not found. Pass its path with -DceExe.'
 }
 
 
 # ============================================================================
-# STATE
+# PATHS / STATE
 # ============================================================================
+
+$OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
 
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 
-$StateFile = Join-Path $OutputDirectory "_completed_channels_$GuildId.txt"
-$SkippedFile = Join-Path $OutputDirectory "_skipped_channels_$GuildId.txt"
-$LogFile = Join-Path $OutputDirectory "_export_retry_log_$GuildId.txt"
+$ManifestFile = Join-Path $OutputDirectory 'manifest.json'
+$LogFile = Join-Path $OutputDirectory "_resilient_export_$GuildId.log"
 
 if ($ResetState) {
-    Remove-Item -LiteralPath $StateFile, $SkippedFile -Force -ErrorAction SilentlyContinue
-}
+    Remove-Item -LiteralPath $ManifestFile -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath "$ManifestFile.bak" -Force -ErrorAction SilentlyContinue
 
-$script:ProgressLineActive = $false
-$script:ProgressLineWidth = 0
-
-
-function Finish-LiveProgressLine {
-    if ($script:ProgressLineActive) {
-        Write-Host ''
-        $script:ProgressLineActive = $false
-        $script:ProgressLineWidth = 0
-    }
-}
-
-
-function Write-NormalLine {
-    param([Parameter(Mandatory)][string]$Text)
-
-    Finish-LiveProgressLine
-    Write-Host $Text
-}
-
-
-function Write-LiveProgressLine {
-    param([Parameter(Mandatory)][string]$Text)
-
-    $PaddingLength = [Math]::Max(0, $script:ProgressLineWidth - $Text.Length)
-    $Padding = if ($PaddingLength -gt 0) { ' ' * $PaddingLength } else { '' }
-
-    $CarriageReturn = [char]13
-    Write-Host -NoNewline -ForegroundColor $ProgressColor "$CarriageReturn$Text$Padding"
-
-    $script:ProgressLineWidth = $Text.Length
-    $script:ProgressLineActive = $true
+    Remove-Item -LiteralPath (Join-Path $OutputDirectory "_completed_channels_$GuildId.txt") -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Join-Path $OutputDirectory "_skipped_channels_$GuildId.txt") -Force -ErrorAction SilentlyContinue
 }
 
 
 function Write-Log {
-    param([Parameter(Mandatory)][string]$Message)
-
-    Finish-LiveProgressLine
+    param(
+        [Parameter(Mandatory)]
+        [string]$Message
+    )
 
     $Timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
     $Line = "[$Timestamp] $Message"
@@ -128,7 +114,10 @@ function Write-Log {
 
 
 function Get-RetryDelay {
-    param([Parameter(Mandatory)][int]$Attempt)
+    param(
+        [Parameter(Mandatory)]
+        [int]$Attempt
+    )
 
     $Exponent = [Math]::Min($Attempt, 5)
     $Delay = [Math]::Pow(2, $Exponent)
@@ -137,275 +126,150 @@ function Get-RetryDelay {
 }
 
 
-function Add-SkippedChannel {
-    param(
-        [Parameter(Mandatory)][string]$ChannelId,
-        [Parameter(Mandatory)][string]$ChannelName,
-        [Parameter(Mandatory)][string]$Reason
+function Test-AuthenticationFailure {
+    param([string]$Text)
+
+    return (
+        $Text -match '(?i)authentication token is invalid' -or
+        $Text -match '(?i)\bunauthorized\b'
     )
-
-    $Timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-    $Tab = [char]9
-    $Line = "$ChannelId$Tab$ChannelName$Tab$Reason$Tab$Timestamp"
-    Add-Content -LiteralPath $SkippedFile -Value $Line -Encoding UTF8
 }
 
 
-$Completed = [System.Collections.Generic.HashSet[string]]::new()
+function Test-PartialChannelFailure {
+    param([string]$Text)
 
-if (Test-Path -LiteralPath $StateFile) {
-    foreach ($Line in Get-Content -LiteralPath $StateFile) {
-        $Id = $Line.Trim()
-        if ($Id) {
-            [void]$Completed.Add($Id)
-        }
-    }
-}
-
-
-$PermanentSkipped = [System.Collections.Generic.HashSet[string]]::new()
-
-if (Test-Path -LiteralPath $SkippedFile) {
-    foreach ($Line in Get-Content -LiteralPath $SkippedFile) {
-        if ([string]::IsNullOrWhiteSpace($Line)) {
-            continue
-        }
-
-        $Parts = $Line -split ([char]9), 4
-        if ($Parts.Count -lt 3) {
-            continue
-        }
-
-        if ($Parts[2] -in @('403 Forbidden', '404 Not Found')) {
-            [void]$PermanentSkipped.Add($Parts[0].Trim())
-        }
-    }
+    return (
+        $Text -match '(?i)Failed to export the following channel\(s\):' -or
+        $Text -match '(?i)Export failed\.'
+    )
 }
 
 
 # ============================================================================
-# CHANNEL LIST
+# BUILD COMMAND
 # ============================================================================
+
+$OutputPath = [IO.Path]::TrimEndingDirectorySeparator($OutputDirectory) +
+    [IO.Path]::DirectorySeparatorChar
+
+$ExportArgs = @(
+    'exportguild',
+    '-t', $Token,
+    '-g', $GuildId,
+    '--parallel', [string]$Parallel,
+    '-f', $Format,
+    '-o', $OutputPath,
+    '--resume',
+    '--fuck-russia'
+)
+
+if ($AdditionalArguments) {
+    $ExportArgs += $AdditionalArguments
+}
+
+
+# ============================================================================
+# RUN / RETRY
+# ============================================================================
+
+$Pass = 0
+$ProcessFailures = 0
+$PartialFailurePasses = 0
 
 Write-Host ''
-Write-Host 'Fetching channel list...'
+Write-Host '========================================================================'
+Write-Host 'DiscordChatExporter resilient guild export'
+Write-Host '========================================================================'
+Write-Host "Guild:       $GuildId"
+Write-Host "Output:      $OutputDirectory"
+Write-Host "Format:      $Format"
+Write-Host "Parallel:    $Parallel"
+Write-Host "Manifest:    $ManifestFile"
 Write-Host ''
 
-$ChannelOutput = & $DceExe channels -t $Token -g $GuildId 2>&1
-$ChannelListExitCode = $LASTEXITCODE
+while ($true) {
+    $Pass++
 
-if ($ChannelListExitCode -ne 0) {
-    $ChannelOutput | ForEach-Object { Write-Host ([string]$_) }
-    throw "Failed to retrieve channel list. Exit code: $ChannelListExitCode"
-}
+    Write-Log "Starting export pass $Pass."
 
-$Channels = foreach ($Line in $ChannelOutput) {
-    $Text = [string]$Line
+    $ErrorFile = Join-Path $env:TEMP "DCE_Resilient_$([Guid]::NewGuid().ToString('N')).stderr.txt"
 
-    if ($Text -match '^\s*(\d+)\s+\|\s+(.+?)\s*$') {
-        [PSCustomObject]@{
-            Id = $Matches[1]
-            Name = $Matches[2].Trim()
-        }
-    }
-}
-
-if (-not $Channels) {
-    throw 'No channels could be parsed from DiscordChatExporter output.'
-}
-
-Write-Host "Found $($Channels.Count) channels."
-Write-Host "Already completed: $($Completed.Count)"
-Write-Host "Permanent skips: $($PermanentSkipped.Count)"
-Write-Host ''
-
-
-# ============================================================================
-# EXPORT
-# ============================================================================
-
-$ChannelNumber = 0
-$SuccessfulThisRun = 0
-$SkippedThisRun = 0
-
-foreach ($Channel in $Channels) {
-    $ChannelNumber++
-
-    $ChannelId = $Channel.Id
-    $ChannelName = $Channel.Name
-
-    Finish-LiveProgressLine
-
-    Write-Host ''
-    Write-Host '========================================================================'
-    Write-Host "[$ChannelNumber/$($Channels.Count)] $ChannelName"
-    Write-Host "Channel ID: $ChannelId"
-    Write-Host '========================================================================'
-
-    if ($Completed.Contains($ChannelId)) {
-        Write-Host 'Already completed - skipping.'
-        continue
-    }
-
-    if ($PermanentSkipped.Contains($ChannelId)) {
-        Write-Host 'Previously marked 403/404 - skipping.'
-        continue
-    }
-
-    $Attempt = 0
-
-    while ($true) {
-        $Attempt++
-
-        Write-Log "Starting '$ChannelName' [$ChannelId] - attempt $Attempt"
-
-        $ExportArgs = @(
-            'export',
-            '-t', $Token,
-            '-c', $ChannelId,
-            '-f', $Format,
-            '-o', "$OutputDirectory\",
-            '--fuck-russia'
-        )
-
-        $OutputLines = [System.Collections.Generic.List[string]]::new()
-
-        & $DceExe @ExportArgs 2>&1 |
-            ForEach-Object {
-                $Text = [string]$_
-                [void]$OutputLines.Add($Text)
-
-                if ($Text -match ':\s*(\d{1,3})%\s*$') {
-                    Write-LiveProgressLine -Text $Text
-                }
-                else {
-                    Write-NormalLine -Text $Text
-                    Add-Content -LiteralPath $LogFile -Value $Text -Encoding UTF8
-                }
-            }
+    try {
+        # stdout stays attached directly to the terminal, preserving the native
+        # Spectre.Console in-place progress display.
+        & $DceExe @ExportArgs 2> $ErrorFile
 
         $ExitCode = $LASTEXITCODE
-        Finish-LiveProgressLine
 
-        $OutputText = $OutputLines -join [Environment]::NewLine
+        $ErrorText = ''
+        if (Test-Path -LiteralPath $ErrorFile) {
+            $ErrorText = Get-Content -LiteralPath $ErrorFile -Raw -ErrorAction SilentlyContinue
+        }
 
-        if ($ExitCode -eq 0) {
-            Write-Log "SUCCESS: '$ChannelName' [$ChannelId]"
+        if (-not [string]::IsNullOrWhiteSpace($ErrorText)) {
+            Write-Host ''
+            Write-Host $ErrorText.TrimEnd()
+            Add-Content -LiteralPath $LogFile -Value $ErrorText.TrimEnd() -Encoding UTF8
+        }
 
-            [void]$Completed.Add($ChannelId)
-            Add-Content -LiteralPath $StateFile -Value $ChannelId -Encoding ASCII
+        if (Test-AuthenticationFailure -Text $ErrorText) {
+            Write-Log 'Authentication failed. Stopping immediately.'
+            throw 'Discord authentication failed.'
+        }
 
-            $SuccessfulThisRun++
+        $HasPartialChannelFailures = Test-PartialChannelFailure -Text $ErrorText
+
+        if ($ExitCode -eq 0 -and -not $HasPartialChannelFailures) {
+            Write-Log "Export completed successfully after $Pass pass(es)."
+
+            Write-Host ''
+            Write-Host '========================================================================'
+            Write-Host 'DONE'
+            Write-Host '========================================================================'
+            Write-Host "Manifest: $ManifestFile"
+            Write-Host "Log:      $LogFile"
+            Write-Host ''
+
             break
         }
 
-        if (
-            $OutputText -match '(?i)authentication token is invalid' -or
-            $OutputText -match '(?i)unauthorized'
-        ) {
-            Write-Log "FATAL: Authentication failed while exporting '$ChannelName' [$ChannelId]."
-            throw 'Discord authentication failed. Stopping the export.'
-        }
+        if ($ExitCode -eq 0 -and $HasPartialChannelFailures) {
+            $PartialFailurePasses++
 
-        if (
-            $OutputText -match '(?i)failed:\s*forbidden' -or
-            $OutputText -match '(?i)403\s+forbidden'
-        ) {
-            Write-Log "SKIPPED: '$ChannelName' [$ChannelId] - 403 Forbidden"
-            Add-SkippedChannel -ChannelId $ChannelId -ChannelName $ChannelName -Reason '403 Forbidden'
-            [void]$PermanentSkipped.Add($ChannelId)
-            $SkippedThisRun++
-            break
-        }
+            if ($PartialFailurePasses -ge $MaxPartialFailurePasses) {
+                Write-Log "Some channels are still failing after $PartialFailurePasses retry pass(es)."
 
-        if (
-            $OutputText -match '(?i)failed:\s*not found' -or
-            $OutputText -match '(?i)404\s+not found'
-        ) {
-            Write-Log "SKIPPED: '$ChannelName' [$ChannelId] - 404 Not Found"
-            Add-SkippedChannel -ChannelId $ChannelId -ChannelName $ChannelName -Reason '404 Not Found'
-            [void]$PermanentSkipped.Add($ChannelId)
-            $SkippedThisRun++
-            break
-        }
+                Write-Host ''
+                Write-Host 'Completed channels are safely checkpointed in manifest.json.'
+                Write-Host 'Run this script again later to retry only the unfinished channels.'
+                Write-Host ''
 
-        $IsJsonTruncation = (
-            $OutputText -match '(?i)JsonReaderException' -or
-            $OutputText -match '(?i)JsonException' -or
-            $OutputText -match '(?i)reached end of data' -or
-            $OutputText -match '(?i)expected end of string' -or
-            $OutputText -match '(?i)malformed or truncated JSON'
-        )
+                break
+            }
 
-        if ($IsJsonTruncation) {
-            Write-Log "TRANSIENT JSON FAILURE: '$ChannelName' [$ChannelId]"
+            $Delay = Get-RetryDelay -Attempt $PartialFailurePasses
 
-            $RetryDelay = Get-RetryDelay -Attempt $Attempt
-            Write-Host "Retrying this channel in $RetryDelay seconds..."
-            Start-Sleep -Seconds $RetryDelay
+            Write-Log "Pass $Pass completed with channel-level failures; retrying unfinished channels only."
+            Write-Host "Retrying unfinished channels in $Delay seconds..."
+            Start-Sleep -Seconds $Delay
             continue
         }
 
-        $IsTransientNetworkFailure = (
-            $OutputText -match '(?i)too many requests' -or
-            $OutputText -match '(?i)rate.?limit' -or
-            $OutputText -match '(?i)request timeout' -or
-            $OutputText -match '(?i)timed out' -or
-            $OutputText -match '(?i)connection.*(?:closed|reset|aborted)' -or
-            $OutputText -match '(?i)socketexception' -or
-            $OutputText -match '(?i)httprequestexception' -or
-            $OutputText -match '(?i)httpcloakexception' -or
-            $OutputText -match '(?i)bad gateway' -or
-            $OutputText -match '(?i)service unavailable' -or
-            $OutputText -match '(?i)gateway timeout' -or
-            $OutputText -match '(?i)cloudflare'
-        )
+        $ProcessFailures++
 
-        if ($IsTransientNetworkFailure) {
-            Write-Log "TRANSIENT NETWORK FAILURE: '$ChannelName' [$ChannelId]"
-
-            $RetryDelay = Get-RetryDelay -Attempt $Attempt
-            Write-Host "Retrying this channel in $RetryDelay seconds..."
-            Start-Sleep -Seconds $RetryDelay
-            continue
+        if ($ProcessFailures -ge $MaxProcessFailureAttempts) {
+            Write-Log "Process-level failure persisted for $ProcessFailures attempt(s); stopping."
+            throw "DiscordChatExporter exited with code $ExitCode after repeated failures."
         }
 
-        Write-Log "UNKNOWN FAILURE: '$ChannelName' [$ChannelId] - exit code $ExitCode"
+        $Delay = Get-RetryDelay -Attempt $ProcessFailures
 
-        if ($Attempt -ge $MaxUnknownErrorAttempts) {
-            Write-Log "SKIPPED: '$ChannelName' [$ChannelId] after $Attempt unknown failures"
-            Add-SkippedChannel -ChannelId $ChannelId -ChannelName $ChannelName -Reason "Unknown failure after $Attempt attempts"
-
-            $SkippedThisRun++
-            break
-        }
-
-        $RetryDelay = Get-RetryDelay -Attempt $Attempt
-        Write-Host "Unknown failure. Retrying in $RetryDelay seconds..."
-        Start-Sleep -Seconds $RetryDelay
+        Write-Log "DiscordChatExporter exited with code $ExitCode."
+        Write-Host "Retrying from the manifest checkpoint in $Delay seconds..."
+        Start-Sleep -Seconds $Delay
+    }
+    finally {
+        Remove-Item -LiteralPath $ErrorFile -Force -ErrorAction SilentlyContinue
     }
 }
-
-
-# ============================================================================
-# SUMMARY
-# ============================================================================
-
-Finish-LiveProgressLine
-
-Write-Host ''
-Write-Host '========================================================================'
-Write-Host 'DONE'
-Write-Host '========================================================================'
-Write-Host ''
-Write-Host "Total channels:          $($Channels.Count)"
-Write-Host "Completed total:         $($Completed.Count)"
-Write-Host "Completed this run:      $SuccessfulThisRun"
-Write-Host "Permanent skips:         $($PermanentSkipped.Count)"
-Write-Host "Skipped this run:        $SkippedThisRun"
-Write-Host ''
-Write-Host "Exports:                 $OutputDirectory"
-Write-Host "Completed state:         $StateFile"
-Write-Host "Skipped channels:        $SkippedFile"
-Write-Host "Full log:                $LogFile"
-Write-Host ''
