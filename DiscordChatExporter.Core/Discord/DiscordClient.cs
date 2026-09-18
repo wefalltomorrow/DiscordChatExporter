@@ -28,17 +28,48 @@ public class DiscordClient(
 {
     private const int JsonParseRetryAttempts = 5;
 
+    private const string DisableBrowserTransportEnvironmentVariable =
+        "DISCORDCHATEXPORTER_DISABLE_BROWSER_TRANSPORT";
+
     // HttpCloak's in-process .NET native binding currently has an unresolved
     // host-process crash on Linux. Keep the browser-fingerprint transport on
     // Windows, where that issue is not reproduced, and retain HttpClient
-    // elsewhere for process stability.
-    internal static bool IsBrowserTransportSupported => OperatingSystem.IsWindows();
+    // elsewhere for process stability. The environment override gives users
+    // a recovery switch if the native transport causes trouble on a machine.
+    internal static bool ShouldUseBrowserTransport(string? disabledValue, bool isWindows) =>
+        isWindows
+        && !string.Equals(disabledValue, "1", StringComparison.OrdinalIgnoreCase)
+        && !string.Equals(disabledValue, "true", StringComparison.OrdinalIgnoreCase)
+        && !string.Equals(disabledValue, "yes", StringComparison.OrdinalIgnoreCase)
+        && !string.Equals(disabledValue, "on", StringComparison.OrdinalIgnoreCase);
+
+    internal static bool IsBrowserTransportSupported =>
+        ShouldUseBrowserTransport(
+            Environment.GetEnvironmentVariable(DisableBrowserTransportEnvironmentVariable),
+            OperatingSystem.IsWindows()
+        );
+
+    private static Session? TryCreateBrowserSession()
+    {
+        if (!IsBrowserTransportSupported)
+            return null;
+
+        try
+        {
+            return new Session(preset: Presets.Chrome150Windows, retry: 0);
+        }
+        catch
+        {
+            // Browser impersonation is an enhancement, not a reason to make the
+            // exporter unusable. Fall back to managed HttpClient if the native
+            // transport cannot initialize on this system.
+            return null;
+        }
+    }
 
     private readonly Uri _baseUri = new("https://discord.com/api/v10/", UriKind.Absolute);
     private readonly HttpClient _httpClient = Http.Client;
-    private readonly Session? _session = IsBrowserTransportSupported
-        ? new Session(preset: Presets.Chrome150Windows, retry: 0)
-        : null;
+    private readonly Session? _session = TryCreateBrowserSession();
     private readonly DiscordUserClientProfile _userClientProfile = new();
     private readonly Func<TimeSpan, CancellationToken, ValueTask> _delayAsync = static (
         delay,
