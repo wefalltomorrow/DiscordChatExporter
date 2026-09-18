@@ -14,7 +14,14 @@ public class ExportFormatToStringConverter : IValueConverter
         Type targetType,
         object? parameter,
         CultureInfo culture
-    ) => value is ExportFormat format ? format.GetDisplayName() : default;
+    ) =>
+        value switch
+        {
+            ExportFormat format => format.GetDisplayName(),
+            string format when Enum.TryParse<ExportFormat>(format, true, out var parsed) =>
+                parsed.GetDisplayName(),
+            _ => default,
+        };
 
     public object ConvertBack(
         object? value,
