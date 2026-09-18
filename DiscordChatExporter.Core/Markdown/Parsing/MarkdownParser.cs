@@ -105,7 +105,9 @@ internal static partial class MarkdownParser
         new RegexMatcher<MarkdownContext, MarkdownNode>(
             // Include the linebreak in the content so that the lines are preserved in quotes.
             new Regex(@"^>\s(.+\n?)", DefaultRegexOptions),
-            (c, s, m) => new FormattingNode(FormattingKind.Quote, Parse(c, s.Relocate(m.Groups[1])))
+            (c, s, m) =>
+                new FormattingNode(FormattingKind.Quote, Parse(c, s.Relocate(m.Groups[1]))),
+            isLineAnchored: true
         );
 
     private static readonly IMatcher<
@@ -120,20 +122,24 @@ internal static partial class MarkdownParser
             new FormattingNode(
                 FormattingKind.Quote,
                 m.Groups[1].Captures.SelectMany(r => Parse(c, s.Relocate(r))).ToArray()
-            )
+            ),
+        isLineAnchored: true
     );
 
     private static readonly IMatcher<MarkdownContext, MarkdownNode> MultiLineQuoteNodeMatcher =
         new RegexMatcher<MarkdownContext, MarkdownNode>(
             new Regex(@"^>>>\s(.+)", DefaultRegexOptions | RegexOptions.Singleline),
-            (c, s, m) => new FormattingNode(FormattingKind.Quote, Parse(c, s.Relocate(m.Groups[1])))
+            (c, s, m) =>
+                new FormattingNode(FormattingKind.Quote, Parse(c, s.Relocate(m.Groups[1]))),
+            isLineAnchored: true
         );
 
     private static readonly IMatcher<MarkdownContext, MarkdownNode> HeadingNodeMatcher =
         new RegexMatcher<MarkdownContext, MarkdownNode>(
             // Consume the linebreak so that it's not attached to following nodes.
             new Regex(@"^(\#{1,3})\s(.+)\n", DefaultRegexOptions),
-            (c, s, m) => new HeadingNode(m.Groups[1].Length, Parse(c, s.Relocate(m.Groups[2])))
+            (c, s, m) => new HeadingNode(m.Groups[1].Length, Parse(c, s.Relocate(m.Groups[2]))),
+            isLineAnchored: true
         );
 
     private static readonly IMatcher<MarkdownContext, MarkdownNode> ListNodeMatcher =
@@ -147,7 +153,8 @@ internal static partial class MarkdownParser
                     m.Groups[2]
                         .Captures.Select(x => new ListItemNode(Parse(c, s.Relocate(x))))
                         .ToArray()
-                )
+                ),
+            isLineAnchored: true
         );
 
     /* Code blocks */
@@ -209,7 +216,7 @@ internal static partial class MarkdownParser
         new RegexMatcher<MarkdownContext, MarkdownNode>(
             new Regex(
                 // Build a pattern from all known emoji, sorted longest-first so that compound
-                // emoji (e.g., sequences with ZWJ or skin-tone modifiers) are matched before
+                // emoji (e.g. sequences with ZWJ or skin-tone modifiers) are matched before
                 // their individual components.
                 "("
                     + string.Join(
@@ -235,7 +242,7 @@ internal static partial class MarkdownParser
     private static readonly IMatcher<MarkdownContext, MarkdownNode> CustomEmojiNodeMatcher =
         new RegexMatcher<MarkdownContext, MarkdownNode>(
             // Capture <:lul:123456> or <a:lul:123456>
-            new Regex(@"<(a)?:(.+?):(\d+?)>", DefaultRegexOptions),
+            new Regex(@"<(a)?:([A-Za-z0-9_]{2,32}):(\d+?)>", DefaultRegexOptions),
             (_, _, m) =>
                 new EmojiNode(
                     Snowflake.TryParse(m.Groups[3].Value),
@@ -264,7 +271,10 @@ internal static partial class MarkdownParser
     private static readonly IMatcher<MarkdownContext, MarkdownNode> MaskedLinkNodeMatcher =
         new RegexMatcher<MarkdownContext, MarkdownNode>(
             // Capture [title](link)
-            new Regex(@"\[(.+?)\]\((https?://\S*[^\.,:;""'\s])\)", DefaultRegexOptions),
+            new Regex(
+                @"\[(.+?)\]\((https?://\S*[^\.,:;""'\s])\)",
+                DefaultRegexOptions | RegexOptions.NonBacktracking
+            ),
             (c, s, m) => new LinkNode(m.Groups[2].Value, Parse(c, s.Relocate(m.Groups[1])))
         );
 
@@ -408,7 +418,7 @@ internal static partial class MarkdownParser
             TimestampNodeMatcher
         );
 
-    // Minimal set of matchers for non-multimedia formats (e.g., plain text)
+    // Minimal set of matchers for non-multimedia formats (e.g. plain text)
     private static readonly IMatcher<MarkdownContext, MarkdownNode> MinimalNodeMatcher =
         new AggregateMatcher<MarkdownContext, MarkdownNode>(
             // Mentions
@@ -476,6 +486,157 @@ internal static partial class MarkdownParser
 
     public static IReadOnlyList<LinkNode> ExtractLinks(string markdown) =>
         Extract<LinkNode>(markdown);
+
+    private static int CountRun(string markdown, int startIndex, char character)
+    {
+        var index = startIndex;
+        while (index < markdown.Length && markdown[index] == character)
+            index++;
+
+        return index - startIndex;
+    }
+
+    private static bool TrySkipCodeSpan(string markdown, int startIndex, out int endIndex)
+    {
+        var delimiterLength = CountRun(markdown, startIndex, '`');
+        var delimiter = new string('`', delimiterLength);
+        var closingIndex = markdown.IndexOf(
+            delimiter,
+            startIndex + delimiterLength,
+            StringComparison.Ordinal
+        );
+
+        if (closingIndex < 0)
+        {
+            endIndex = default;
+            return false;
+        }
+
+        endIndex = closingIndex + delimiterLength;
+        return true;
+    }
+
+    private static bool StartsWithHttpUrl(string markdown, int startIndex) =>
+        markdown.AsSpan(startIndex).StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+        || markdown.AsSpan(startIndex).StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+
+    private static bool TryReadHiddenLinkUrl(
+        string markdown,
+        int startIndex,
+        out string url,
+        out int endIndex
+    )
+    {
+        url = "";
+        endIndex = default;
+
+        var urlStartIndex = startIndex + 1;
+        if (!StartsWithHttpUrl(markdown, urlStartIndex))
+            return false;
+
+        var closingIndex = markdown.IndexOf('>', urlStartIndex);
+        if (closingIndex < 0)
+            return false;
+
+        var candidate = markdown[urlStartIndex..closingIndex];
+        if (candidate.Any(char.IsWhiteSpace))
+            return false;
+
+        url = candidate.TrimEnd('.', ',', ':', ';', '"', '\'');
+        endIndex = closingIndex + 1;
+        return !string.IsNullOrWhiteSpace(url);
+    }
+
+    private static bool TryReadMaskedLinkUrl(
+        string markdown,
+        int startIndex,
+        out string url,
+        out int endIndex
+    )
+    {
+        url = "";
+        endIndex = default;
+
+        var titleEndIndex = markdown.IndexOf("](", startIndex + 1, StringComparison.Ordinal);
+        if (titleEndIndex < 0)
+            return false;
+
+        var urlStartIndex = titleEndIndex + 2;
+        var urlEndIndex = markdown.IndexOf(')', urlStartIndex);
+        if (urlEndIndex < 0)
+            return false;
+
+        url = markdown[urlStartIndex..urlEndIndex];
+        endIndex = urlEndIndex + 1;
+        return !string.IsNullOrWhiteSpace(url);
+    }
+
+    private static bool TryReadAutoLinkUrl(
+        string markdown,
+        int startIndex,
+        out string url,
+        out int endIndex
+    )
+    {
+        url = "";
+        endIndex = default;
+
+        if (!StartsWithHttpUrl(markdown, startIndex))
+            return false;
+
+        var urlEndIndex = startIndex;
+        while (urlEndIndex < markdown.Length && !char.IsWhiteSpace(markdown[urlEndIndex]))
+            urlEndIndex++;
+
+        url = markdown[startIndex..urlEndIndex].TrimEnd('.', ',', ':', ';', '"', '\'');
+        endIndex = urlEndIndex;
+        return !string.IsNullOrWhiteSpace(url);
+    }
+
+    public static IReadOnlyList<string> ExtractLinkUrls(string markdown)
+    {
+        var urls = new List<string>();
+
+        for (var index = 0; index < markdown.Length; )
+        {
+            if (markdown[index] == '`' && TrySkipCodeSpan(markdown, index, out var codeEndIndex))
+            {
+                index = codeEndIndex;
+                continue;
+            }
+
+            if (
+                markdown[index] == '['
+                && TryReadMaskedLinkUrl(markdown, index, out var maskedUrl, out var maskedEndIndex)
+            )
+            {
+                urls.Add(maskedUrl);
+                index = maskedEndIndex;
+                continue;
+            }
+
+            if (
+                markdown[index] == '<'
+                && TryReadHiddenLinkUrl(markdown, index, out var hiddenUrl, out var hiddenEndIndex)
+            )
+            {
+                urls.Add(hiddenUrl);
+                index = hiddenEndIndex;
+                continue;
+            }
+
+            if (TryReadAutoLinkUrl(markdown, index, out var autoUrl, out var autoEndIndex))
+            {
+                urls.Add(autoUrl);
+                index = autoEndIndex;
+                continue;
+            }
+
+            index++;
+        }
+
+        return urls;
+    }
 
     public static IReadOnlyList<EmojiNode> ExtractEmojis(string markdown) =>
         Extract<EmojiNode>(markdown);
