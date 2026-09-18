@@ -20,6 +20,7 @@
   <ItemGroup>
     <!-- Expose this property in code -->
     <ProjectProperty Include="EncryptionSalt" />
+    <InternalsVisibleTo Include="DiscordChatExporter.Gui.Tests" />
   </ItemGroup>
 
   <ItemGroup>
