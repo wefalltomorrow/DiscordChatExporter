@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - prime
+      - best-of-all
     tags:
       - "*"
   pull_request:
