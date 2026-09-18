@@ -10,20 +10,25 @@ namespace DiscordChatExporter.Core.Discord.Data;
 public partial record Emoji(
     // Only present on custom emoji
     Snowflake? Id,
-    // Name of a custom emoji (e.g., LUL) or actual representation of a standard emoji (e.g., 🙂)
+    // Name of a custom emoji (e.g. LUL) or actual representation of a standard emoji (e.g. 🙂)
     string Name,
     bool IsAnimated
 )
 {
     public bool IsCustomEmoji { get; } = Id is not null;
 
-    // Name of a custom emoji (e.g., LUL) or name of a standard emoji (e.g., slight_smile)
+    public string? ImageUrlOverride { get; init; }
+
+    // Name of a custom emoji (e.g. LUL) or name of a standard emoji (e.g. slight_smile)
     public string Code { get; } = Id is not null ? Name : EmojiIndex.TryGetCode(Name) ?? Name;
 
-    public string ImageUrl { get; } =
-        Id is not null
-            ? ImageCdn.GetCustomEmojiUrl(Id.Value, IsAnimated)
-            : ImageCdn.GetStandardEmojiUrl(Name);
+    public string ImageUrl =>
+        ImageUrlOverride
+        ?? (
+            Id is not null
+                ? ImageCdn.GetCustomEmojiUrl(Id.Value, IsAnimated)
+                : ImageCdn.GetStandardEmojiUrl(Name)
+        );
 }
 
 public partial record Emoji
