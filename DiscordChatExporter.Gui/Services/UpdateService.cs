@@ -35,7 +35,7 @@ public class UpdateService : IDisposable
         OperatingSystem.IsWindows() && StartOptions.Current.IsAutoUpdateAllowed
             ? new UpdateManager(
                 new GithubPackageResolver(
-                    "arandomhooman",
+                    "wefalltomorrow",
                     "DiscordChatExporter",
                     // Examples:
                     // DiscordChatExporter.win-arm64.zip
