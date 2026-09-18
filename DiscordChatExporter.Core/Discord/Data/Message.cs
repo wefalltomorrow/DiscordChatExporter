@@ -30,7 +30,7 @@ public partial record Message(
     Message? ReferencedMessage,
     MessageSnapshot? ForwardedMessage,
     Interaction? Interaction,
-    Poll? Poll
+    Poll? Poll = null
 ) : IHasId
 {
     public bool IsEmpty { get; } =
