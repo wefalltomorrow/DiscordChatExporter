@@ -16,8 +16,10 @@ namespace DiscordChatExporter.Core.Discord;
 // Tyrrrz/DiscordChatExporter#1582.
 internal sealed class DiscordUserClientProfile
 {
+    internal const int BrowserMajorVersion = 150;
+
     internal const string BrowserUserAgent =
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36";
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36";
 
     internal const int FallbackClientBuildNumber = 594503;
 
@@ -97,7 +99,7 @@ internal sealed class DiscordUserClientProfile
             if (!response.IsSuccessStatusCode)
                 return null;
 
-            var html = await response.Content.ReadAsStringAsync(cancellationToken);
+            var html = await response.Content.ReadAsStringAsync(timeout.Token);
             return TryParseClientBuildNumber(html);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -156,7 +158,7 @@ internal sealed class DiscordUserClientProfile
             writer.WriteString("system_locale", "en-US");
             writer.WriteBoolean("has_client_mods", false);
             writer.WriteString("browser_user_agent", BrowserUserAgent);
-            writer.WriteString("browser_version", "152.0.0.0");
+            writer.WriteString("browser_version", $"{BrowserMajorVersion}.0.0.0");
             writer.WriteString("os_version", "10");
             writer.WriteString("referrer", "");
             writer.WriteString("referring_domain", "");
