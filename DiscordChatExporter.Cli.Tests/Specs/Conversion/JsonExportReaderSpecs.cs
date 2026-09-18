@@ -8,6 +8,7 @@ using DiscordChatExporter.Core.Discord;
 using DiscordChatExporter.Core.Discord.Data;
 using DiscordChatExporter.Core.Discord.Data.Common;
 using DiscordChatExporter.Core.Discord.Data.Embeds;
+using DiscordChatExporter.Core.Discord.Data.Polls;
 using DiscordChatExporter.Core.Exporting;
 using DiscordChatExporter.Core.Exporting.Continuation;
 using DiscordChatExporter.Core.Exporting.Conversion;
@@ -195,6 +196,55 @@ public sealed class JsonExportReaderSpecs : IDisposable
         var field = embed.Fields.Should().ContainSingle().Subject;
         field.Name.Should().Be("**field name**");
         field.Value.Should().Be("`field value`");
+    }
+
+    [Fact]
+    public async Task Reader_round_trips_poll_payloads()
+    {
+        var path = Path.Combine(_dir, "poll.json");
+        var author = CreateUser(10, "alice");
+
+        await using (var writer = new JsonMessageWriter(File.Create(path), CreateContext(path)))
+        {
+            await writer.WritePreambleAsync();
+            await writer.WriteMessageAsync(
+                CreateMessage(1001, author, CreateUser(11, "bob")) with
+                {
+                    Poll = new Poll(
+                        "Best route?",
+                        [
+                            new PollAnswer(1, "Coastal", new Emoji(null, "🌊", false)),
+                            new PollAnswer(2, "Mountain", null),
+                        ],
+                        DateTimeOffset.UnixEpoch.AddDays(1),
+                        true,
+                        new PollResults(
+                            true,
+                            [
+                                new PollAnswerResult(1, 7, true),
+                                new PollAnswerResult(2, 3, false),
+                            ]
+                        )
+                    ),
+                }
+            );
+            await writer.WritePostambleAsync();
+        }
+
+        var parsed = await JsonExportReader.ParseAsync(path);
+
+        var poll = parsed.Messages.Single().Poll.Should().NotBeNull().Subject;
+        poll.Question.Should().Be("Best route?");
+        poll.AllowsMultipleAnswers.Should().BeTrue();
+        poll.ExpiresAt.Should().Be(DateTimeOffset.UnixEpoch.AddDays(1));
+        poll.Answers.Should().HaveCount(2);
+        poll.Answers[0].Text.Should().Be("Coastal");
+        poll.Answers[0].Emoji.Should().NotBeNull();
+        poll.Answers[0].Emoji!.Name.Should().Be("🌊");
+        poll.Results.Should().NotBeNull();
+        poll.Results!.IsFinalized.Should().BeTrue();
+        poll.Results.TotalVoteCount.Should().Be(10);
+        poll.Results.Answers[0].DidCurrentUserVote.Should().BeTrue();
     }
 
     [Fact]
