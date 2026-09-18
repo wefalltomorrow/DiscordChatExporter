@@ -269,7 +269,7 @@ public class DiscordClient(
                 if (attempt >= JsonParseRetryAttempts)
                     break;
 
-                await Task.Delay(GetJsonParseRetryDelay(attempt), cancellationToken);
+                await _delayAsync(GetJsonParseRetryDelay(attempt), cancellationToken);
             }
         }
 
@@ -342,7 +342,7 @@ public class DiscordClient(
                 if (attempt >= JsonParseRetryAttempts)
                     break;
 
-                await Task.Delay(GetJsonParseRetryDelay(attempt), cancellationToken);
+                await _delayAsync(GetJsonParseRetryDelay(attempt), cancellationToken);
             }
         }
 
@@ -376,7 +376,7 @@ public class DiscordClient(
                 if (attempt >= JsonParseRetryAttempts)
                     return (response.StatusCode, null);
 
-                await Task.Delay(GetJsonParseRetryDelay(attempt), cancellationToken);
+                await _delayAsync(GetJsonParseRetryDelay(attempt), cancellationToken);
             }
         }
 
