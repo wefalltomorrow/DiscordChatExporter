@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Net.Sockets;
 using System.Security.Authentication;
 using System.Threading.Tasks;
+using HttpCloak;
 using Polly;
 using Polly.Retry;
 using PowerKit.Extensions;
@@ -26,7 +27,11 @@ public static class Http
         exception
             .GetSelfAndDescendants()
             .Any(ex =>
-                ex is TimeoutException or SocketException or AuthenticationException
+                ex
+                    is TimeoutException
+                        or SocketException
+                        or AuthenticationException
+                        or HttpCloakException
                 || ex is HttpRequestException hrex
                     && IsRetryableStatusCode(hrex.StatusCode ?? HttpStatusCode.OK)
             );
