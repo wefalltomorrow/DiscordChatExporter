@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Text;
@@ -7,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using DiscordChatExporter.Core.Markdown;
 using DiscordChatExporter.Core.Markdown.Parsing;
+using DiscordChatExporter.Core.Utils;
 using PowerKit.Extensions;
 
 namespace DiscordChatExporter.Core.Exporting;
@@ -182,18 +184,20 @@ internal partial class HtmlMarkdownVisitor(
         CancellationToken cancellationToken = default
     )
     {
+        var linkUrl = SanitizeHtmlLinkUrl(link.Url);
+
         // Try to extract the message ID if the link points to a Discord message
         var linkedMessageId = Regex
-            .Match(link.Url, @"^https?://(?:discord|discordapp)\.com/channels/.*?/(\d+)/?$")
+            .Match(linkUrl, @"^https?://(?:discord|discordapp)\.com/channels/.*?/(\d+)/?$")
             .Groups[1]
             .Value;
 
         buffer.Append(
             !string.IsNullOrWhiteSpace(linkedMessageId)
                 // lang=html
-                ? $"""<a href="{HtmlEncode(link.Url)}" onclick="scrollToMessage(event, '{linkedMessageId}')">"""
+                ? $"""<a href="{HtmlEncode(linkUrl)}" onclick="scrollToMessage(event, '{linkedMessageId}')">"""
                 // lang=html
-                : $"""<a href="{HtmlEncode(link.Url)}">"""
+                : $"""<a href="{HtmlEncode(linkUrl)}">"""
         );
 
         await VisitAsync(link.Children, cancellationToken);
@@ -210,6 +214,11 @@ internal partial class HtmlMarkdownVisitor(
     )
     {
         var jumboClass = isJumbo ? "chatlog__emoji--large" : "";
+        var imageUrl =
+            context.TryGetEmojiImageUrl(emoji.Id, emoji.Name, emoji.IsAnimated) ?? emoji.ImageUrl;
+        var resolvedImageUrl = SanitizeHtmlAssetUrl(
+            await context.ResolveAssetUrlAsync(imageUrl, cancellationToken)
+        );
 
         buffer.Append(
             // lang=html
@@ -219,9 +228,7 @@ internal partial class HtmlMarkdownVisitor(
                 class="chatlog__emoji {jumboClass}"
                 alt="{HtmlEncode(emoji.Name)}"
                 title="{HtmlEncode(emoji.Code)}"
-                src="{HtmlEncode(
-                await context.ResolveAssetUrlAsync(emoji.ImageUrl, cancellationToken)
-            )}">
+                src="{HtmlEncode(resolvedImageUrl)}">
             """
         );
     }
@@ -295,8 +302,14 @@ internal partial class HtmlMarkdownVisitor(
             var name = role?.Name ?? "deleted-role";
             var color = role?.Color;
 
-            var style = color is { } c
-                ? $"color: rgb({c.R}, {c.G}, {c.B}); background-color: rgba({c.R}, {c.G}, {c.B}, 0.1);"
+            var style = color is not null
+                ? $"""
+                    color: rgb({color.Value.R}, {color.Value.G}, {color
+                        .Value
+                        .B}); background-color: rgba({color.Value.R}, {color.Value.G}, {color
+                        .Value
+                        .B}, 0.1);
+                    """
                 : null;
 
             buffer.Append(
@@ -337,6 +350,41 @@ internal partial class HtmlMarkdownVisitor(
 internal partial class HtmlMarkdownVisitor
 {
     private static string HtmlEncode(string text) => WebUtility.HtmlEncode(text);
+
+    private static bool IsSafeLinkUrl(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https";
+
+    public static string SanitizeHtmlLinkUrl(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+            return "#";
+
+        var trimmedUrl = url.Trim();
+        return IsSafeLinkUrl(trimmedUrl) ? trimmedUrl : "#";
+    }
+
+    public static string SanitizeHtmlAssetUrl(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+            return "";
+
+        var trimmedUrl = url.Trim();
+        if (Path.IsPathFullyQualified(trimmedUrl))
+            return Url.EncodeFilePath(trimmedUrl);
+
+        return IsSafeHtmlAssetUrl(trimmedUrl) ? trimmedUrl : "#";
+    }
+
+    private static bool IsSafeHtmlAssetUrl(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.RelativeOrAbsolute, out var uri))
+            return false;
+
+        if (!uri.IsAbsoluteUri)
+            return !url.StartsWith("//", StringComparison.Ordinal);
+
+        return uri.Scheme is "http" or "https" or "file";
+    }
 
     public static async ValueTask<string> FormatAsync(
         ExportContext context,
