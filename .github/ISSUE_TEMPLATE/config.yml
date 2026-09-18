@@ -1,10 +1,10 @@
 blank_issues_enabled: true
 contact_links:
   - name: 📖 Documentation
-    url: https://github.com/arandomhooman/DiscordChatExporter/tree/prime/.docs
+    url: https://github.com/wefalltomorrow/DiscordChatExporter/tree/prime/.docs
     about: Find usage guides and frequently asked questions.
   - name: 🗨 Discussions
-    url: https://github.com/arandomhooman/DiscordChatExporter/discussions
+    url: https://github.com/wefalltomorrow/DiscordChatExporter/discussions
     about: Ask and answer questions.
   - name: 📦 Upstream project (Tyrrrz/DiscordChatExporter)
     url: https://github.com/Tyrrrz/DiscordChatExporter
