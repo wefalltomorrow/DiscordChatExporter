@@ -20,13 +20,15 @@ COPY DiscordChatExporter.Core DiscordChatExporter.Core
 COPY DiscordChatExporter.Cli DiscordChatExporter.Cli
 
 # Publish a self-contained assembly so we can use a slimmer runtime image
-RUN dotnet publish DiscordChatExporter.Cli \
+RUN DOTNET_ARCH=$TARGETARCH && \
+    if [ "$DOTNET_ARCH" = "amd64" ]; then DOTNET_ARCH=x64; fi && \
+    dotnet publish DiscordChatExporter.Cli \
     -p:Version=$VERSION \
     -p:CSharpier_Bypass=true \
     --configuration Release \
     --self-contained \
     --use-current-runtime \
-    --arch $TARGETARCH \
+    --arch $DOTNET_ARCH \
     --output DiscordChatExporter.Cli/bin/publish/
 
 # -- Run
@@ -61,4 +63,5 @@ WORKDIR /out
 
 COPY --from=build /tmp/app/DiscordChatExporter.Cli/bin/publish /opt/app
 COPY docker-entrypoint.sh /opt/app
+RUN sed -i 's/\r$//' /opt/app/docker-entrypoint.sh && chmod +x /opt/app/docker-entrypoint.sh
 ENTRYPOINT ["/opt/app/docker-entrypoint.sh"]
