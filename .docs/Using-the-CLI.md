@@ -231,6 +231,31 @@ To export all channels in a specific server, use the `exportguild` command and p
 ./DiscordChatExporter.Cli exportguild -t "mfa.Ifrn" -g 21814
 ```
 
+#### Resuming interrupted multi-channel exports
+
+For long whole-server or multi-channel exports, use `--resume` to enable per-channel checkpointing.
+Each completed channel is recorded in `manifest.json` together with its file size and SHA-256 hash.
+If the command is interrupted and run again with the same output settings, completed and verified
+channels are skipped while incomplete or failed channels are exported again.
+
+```console
+./DiscordChatExporter.Cli exportguild -t "mfa.Ifrn" -g 21814 --resume
+```
+
+The manifest is updated as each channel finishes, so progress survives a crash or terminal closure.
+Partitioned exports are considered complete only when every recorded partition exists and passes
+integrity verification.
+
+If you want to create checkpoints without skipping any existing exports on the current run, use
+`--checkpoint` instead. A later run can then use `--resume`.
+
+```console
+./DiscordChatExporter.Cli exportguild -t "mfa.Ifrn" -g 21814 --checkpoint
+```
+
+A manifest/catalog write failure is reported as a warning and does not invalidate an otherwise
+successful channel export.
+
 #### Including threads
 
 By default, threads are not included in the export. You can change this behavior by using `--include-threads` and
