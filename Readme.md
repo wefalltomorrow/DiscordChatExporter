@@ -1,85 +1,101 @@
-# DiscordChatExporter
+# DiscordChatExporter (arandomhooman fork)
 
-[![Status](https://img.shields.io/badge/status-maintenance-ffd700.svg)](https://github.com/Tyrrrz/.github/blob/prime/docs/project-status.md)
-[![Made in Ukraine](https://img.shields.io/badge/made_in-ukraine-ffd700.svg?labelColor=0057b7)](https://tyrrrz.me/ukraine)
-[![Build](https://img.shields.io/github/actions/workflow/status/Tyrrrz/DiscordChatExporter/main.yml?branch=prime)](https://github.com/Tyrrrz/DiscordChatExporter/actions)
-[![Coverage](https://img.shields.io/codecov/c/github/Tyrrrz/DiscordChatExporter/prime)](https://codecov.io/gh/Tyrrrz/DiscordChatExporter)
-[![Release](https://img.shields.io/github/release/Tyrrrz/DiscordChatExporter.svg)](https://github.com/Tyrrrz/DiscordChatExporter/releases)
-[![Downloads](https://img.shields.io/github/downloads/Tyrrrz/DiscordChatExporter/total.svg)](https://github.com/Tyrrrz/DiscordChatExporter/releases)
-[![Pulls](https://img.shields.io/docker/pulls/tyrrrz/discordchatexporter)](https://hub.docker.com/r/tyrrrz/discordchatexporter)
-[![Discord](https://img.shields.io/discord/869237470565392384?label=discord)](https://discord.gg/2SUWKFnHSm)
-[![Fuck Russia](https://img.shields.io/badge/fuck-russia-e4181c.svg?labelColor=000000)](https://twitter.com/tyrrrz/status/1495972128977571848)
+[![Build](https://img.shields.io/github/actions/workflow/status/arandomhooman/DiscordChatExporter/main.yml?branch=prime)](https://github.com/arandomhooman/DiscordChatExporter/actions)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](License.txt)
 
-<table>
-    <tr>
-        <td width="99999" align="center">Development of this project is entirely funded by the community. <b><a href="https://tyrrrz.me/donate">Consider donating to support!</a></b></td>
-    </tr>
-</table>
+> This is a **fork** of [**Tyrrrz/DiscordChatExporter**](https://github.com/Tyrrrz/DiscordChatExporter)
+> with extra features (see [Additions in this fork](#additions-in-this-fork)). All credit for the original
+> application goes to [Oleksii Holub (Tyrrrz)](https://github.com/Tyrrrz) and its contributors.
+> Licensed under MIT, the same as upstream.
 
 <p align="center">
     <img src="favicon.png" alt="Icon" />
 </p>
 
-**DiscordChatExporter** is an application that can be used to export message history from any [Discord](https://discord.com) channel to a file.
-It works with direct messages, group messages, and server channels, and supports Discord's dialect of markdown as well as most other rich media features.
+**DiscordChatExporter** can export message history from any [Discord](https://discord.com) channel to a file.
+It works with direct messages, group messages, and server channels, and supports Discord's dialect of
+markdown as well as most other rich media features.
 
 > [!WARNING]
-> While **DiscordChatExporter** allows it, automating user accounts is against Discord TOS and may result in you getting banned.
-> If possible, use a bot to export chat logs from accessible channels.
+> While **DiscordChatExporter** allows it, automating user accounts is against Discord TOS and may result in
+> you getting banned. If possible, use a bot to export chat logs from accessible channels.
 
-## Terms of use<sup>[[?]](https://github.com/Tyrrrz/.github/blob/prime/docs/why-so-political.md)</sup>
+## Additions in this fork
 
-By using this project or its source code, for any purpose and in any shape or form, you grant your **implicit agreement** to all the following statements:
+On top of upstream **DiscordChatExporter**, this fork adds:
 
-- You **condemn Russia and its military aggression against Ukraine**
-- You **recognize that Russia is an occupant that unlawfully invaded a sovereign state**
-- You **support Ukraine's territorial integrity, including its claims over temporarily occupied territories of Crimea and Donbas**
-- You **reject false narratives perpetuated by Russian state propaganda**
-
-To learn more about the war and how you can help, [click here](https://tyrrrz.me/ukraine). Glory to Ukraine! 🇺🇦
+- **Continue / resume exports** — re-open an existing export and fetch only the messages added since,
+  merging them into the existing file in place. Works for **JSON, HTML, CSV, and SQLite**, and can
+  **continue an entire server in one click** (select-all across channels).
+- **SQLite (`.db`) export format** — export a channel directly to a queryable SQLite database with
+  built-in full-text search. Available in both the GUI and the CLI (`-f Db`).
+- **Library with full-text search** — catalog your past exports and search message content across all of
+  them at once (powered by the SQLite format).
+- **Offline format conversion** — convert an existing **JSON** export into **HTML (dark/light), TXT, CSV,
+  or SQLite** without re-downloading anything. Conversions stay high-fidelity: roles, colors, members,
+  channels, and custom emoji are preserved via data embedded in the JSON export.
+- **Count-backed progress & ETA** — progress and time-remaining estimates based on actual message counts
+  rather than timestamp guesses.
 
 ## Download
 
-- **Graphical user interface** (desktop app):
-  - 🟢 **[Stable release](https://github.com/Tyrrrz/DiscordChatExporter/releases/latest)**: look for `DiscordChatExporter.*.zip`
-  - 🟠 [CI build](https://github.com/Tyrrrz/DiscordChatExporter/actions/workflows/main.yml): look for `DiscordChatExporter.*.zip`
-  - 📦 [Scoop](https://scoop.sh/#/apps?q=DiscordChatExporter&p=1&id=c71b7367623c560a2dc746b9739b9568b79b59ae): `scoop install extras/discordchatexporter` (community-maintained)
-  - 📦 [WinGet](https://winstall.app/apps/Tyrrrz.DiscordChatExporter.GUI): `winget install Tyrrrz.DiscordChatExporter.GUI` (community-maintained)
-  - 📦 [AUR](https://aur.archlinux.org/packages/discord-chat-exporter-gui): `yay -S discord-chat-exporter-gui` (community-maintained)
-  - 📦 [Nix](https://search.nixos.org/packages?show=discordchatexporter-desktop): `nix-shell -p discordchatexporter-desktop` (community-maintained)
-- **Command-line interface** (terminal app):
-  - 🟢 **[Stable release](https://github.com/Tyrrrz/DiscordChatExporter/releases/latest)**: look for `DiscordChatExporter.Cli.*.zip`
-  - 🟠 [CI build](https://github.com/Tyrrrz/DiscordChatExporter/actions/workflows/main.yml): look for `DiscordChatExporter.Cli.*.zip`
-  - 🐋 [Docker](https://hub.docker.com/r/tyrrrz/discordchatexporter): `docker pull tyrrrz/discordchatexporter`
-  - 📦 [WinGet](https://winstall.app/apps/Tyrrrz.DiscordChatExporter.CLI): `winget install Tyrrrz.DiscordChatExporter.CLI` (community-maintained)
-  - 📦 [AUR](https://aur.archlinux.org/packages/discord-chat-exporter-cli): `yay -S discord-chat-exporter-cli` (community-maintained)
-  - 📦 [Nix](https://search.nixos.org/packages?show=discordchatexporter-cli): `nix-shell -p discordchatexporter-cli` (community-maintained)
+This fork publishes its own builds on its [**Releases**](https://github.com/arandomhooman/DiscordChatExporter/releases) page:
+
+- **GUI** (desktop app): look for `DiscordChatExporter.*.zip`
+- **CLI** (terminal app): look for `DiscordChatExporter.Cli.*.zip`
+
+Or [build it from source](#building-from-source).
 
 > [!IMPORTANT]
-> To launch the GUI version of the app on MacOS, you may need to first remove the downloaded file from quarantine.
-> You can do that by running the following command in the terminal: `xattr -rd com.apple.quarantine DiscordChatExporter.app`.
+> To launch the GUI on macOS you may need to remove the download from quarantine:
+> `xattr -rd com.apple.quarantine DiscordChatExporter.app`.
 
 > [!NOTE]
-> Community-maintained packages are published independently from this repository and may not always be up to date with the latest release.
+> Community packages (Scoop, WinGet, AUR, Nix, Docker) track the **upstream** release, not this fork.
 
-> [!NOTE]
-> If you're unsure which build is right for your system, consult with [this page](https://useragent.cc) to determine your OS and CPU architecture.
+## Building from source
+
+Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download).
+
+```bash
+git clone https://github.com/arandomhooman/DiscordChatExporter.git
+cd DiscordChatExporter
+
+# Run the GUI
+dotnet run --project DiscordChatExporter.Gui -c Release
+
+# Run the CLI
+dotnet run --project DiscordChatExporter.Cli -c Release -- --help
+
+# Or produce a self-contained build (e.g. Windows x64)
+dotnet publish DiscordChatExporter.Gui -c Release -r win-x64 --self-contained -o ./publish
+```
 
 ## Features
 
 - Cross-platform graphical and command-line interfaces
 - Authentication via either a user or a bot token
-- Multiple output formats: HTML (dark/light), TXT, CSV, JSON
+- Multiple output formats: HTML (dark/light), TXT, CSV, JSON, **SQLite**
 - Support for markdown, attachments, embeds, emoji, and other rich media features
 - File partitioning, date ranges, message filtering, and other export options
 - Self-contained exports that can be viewed offline
+- **Resume/continue exports, a searchable export library, and offline conversion of JSON exports into any
+  other format** (this fork)
 
 ## Screenshots
 
 ![channel list](.assets/list.png)
 ![rendered output](.assets/output.png)
 
+## Credits
+
+A fork of [**Tyrrrz/DiscordChatExporter**](https://github.com/Tyrrrz/DiscordChatExporter) by
+[Oleksii Holub](https://github.com/Tyrrrz) and
+[contributors](https://github.com/Tyrrrz/DiscordChatExporter/graphs/contributors), used under the MIT
+license (see [License.txt](License.txt)). Please consider supporting the original author:
+<https://tyrrrz.me/donate>.
+
 ## See also
 
-- [**Chat Analytics**](https://github.com/mlomb/chat-analytics) — solution for analyzing chat patterns of Discord users, using exports produced by **DiscordChatExporter**.
-- [**DiscordChatExporter-frontend**](https://github.com/slatinsky/DiscordChatExporter-frontend) — convenient viewer for exports produced by **DiscordChatExporter**.
+- [**Chat Analytics**](https://github.com/mlomb/chat-analytics) — analyze chat patterns using DiscordChatExporter exports.
+- [**DiscordChatExporter-frontend**](https://github.com/slatinsky/DiscordChatExporter-frontend) — a convenient viewer for exports.
