@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Text.RegularExpressions;
 using System.Threading;
 
 namespace DiscordChatExporter.Core.Exporting.Manifest;
@@ -11,7 +10,7 @@ namespace DiscordChatExporter.Core.Exporting.Manifest;
 public static partial class ManifestResume
 {
     [GeneratedRegex(@" \[part (\d+)\]$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex PartitionSuffixRegex();
+    private static partial Regex ManifestFileFamily.PartitionSuffixRegex();
 
     public static bool IsAlreadyExported(
         ExportManifest? manifest,
@@ -68,7 +67,7 @@ public static partial class ManifestResume
             }
 
             var nameWithoutExtension = Path.GetFileNameWithoutExtension(entry.File);
-            var match = PartitionSuffixRegex().Match(nameWithoutExtension);
+            var match = ManifestFileFamily.PartitionSuffixRegex().Match(nameWithoutExtension);
             if (
                 !match.Success
                 || !int.TryParse(
@@ -121,7 +120,7 @@ public static partial class ManifestResume
         if (!nameWithoutExtension.StartsWith(stem + " [part ", StringComparison.OrdinalIgnoreCase))
             return false;
 
-        var match = PartitionSuffixRegex().Match(nameWithoutExtension);
+        var match = ManifestFileFamily.PartitionSuffixRegex().Match(nameWithoutExtension);
         return match.Success
             && match.Index == stem.Length
             && match.Length == nameWithoutExtension.Length - stem.Length;
