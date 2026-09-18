@@ -30,6 +30,7 @@ public partial class ExportSetupViewModel(
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsSingleChannel))]
+    [NotifyCanExecuteChangedFor(nameof(CopyUserMessagesCommand))]
     public partial IReadOnlyList<Channel>? Channels { get; set; }
 
     [ObservableProperty]
@@ -61,6 +62,10 @@ public partial class ExportSetupViewModel(
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(MessageFilter))]
     public partial string? MessageFilterValue { get; set; }
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(CopyUserMessagesCommand))]
+    public partial string? CopyUserMessagesUserValue { get; set; }
 
     [ObservableProperty]
     public partial bool IsReverseMessageOrder { get; set; }
@@ -101,6 +106,21 @@ public partial class ExportSetupViewModel(
         !string.IsNullOrWhiteSpace(MessageFilterValue)
             ? MessageFilter.Parse(MessageFilterValue)
             : MessageFilter.Null;
+
+    public MessageFilter CopyUserMessagesFilter =>
+        MessageFilter.FromAuthor(CopyUserMessagesUserValue?.Trim() ?? "");
+
+    public bool ShouldCopyUserMessages { get; private set; }
+
+    private bool CanCopyUserMessages() =>
+        IsSingleChannel && !string.IsNullOrWhiteSpace(CopyUserMessagesUserValue);
+
+    [RelayCommand(CanExecute = nameof(CanCopyUserMessages))]
+    private void CopyUserMessages()
+    {
+        ShouldCopyUserMessages = true;
+        Close(true);
+    }
 
     public override Task InitializeAsync()
     {
@@ -176,6 +196,8 @@ public partial class ExportSetupViewModel(
     [RelayCommand]
     private async Task ConfirmAsync()
     {
+        ShouldCopyUserMessages = false;
+
         // Prompt the output path if it hasn't been set yet
         if (string.IsNullOrWhiteSpace(OutputPath))
         {
