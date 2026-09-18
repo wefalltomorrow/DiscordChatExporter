@@ -16,21 +16,52 @@ public static class ManifestWriter
     // from the parallel export loop don't clobber each other. Keyed by manifest path; MUST be static.
     private static readonly AsyncKeyedLocker<string> Locker = new();
 
-    // Writes/updates <dirPath>/manifest.json by merging the given entries into any existing
-    // manifest, keyed by file name (a new entry for the same file replaces the old one).
+    // Writes/updates <dirPath>/manifest.json. Entries from the same output family are replaced
+    // as a set so re-exporting a channel with fewer partitions cannot leave stale [part N] records.
     // Atomic: writes a temp file then swaps it in, keeping a .bak of the previous manifest.
     public static async ValueTask WriteAsync(
         string dirPath,
         IReadOnlyList<ManifestEntry> newEntries,
         DateTimeOffset now,
         CancellationToken cancellationToken = default
-    ) => await UpdateAsync(dirPath, _ => newEntries, now, cancellationToken);
+    ) =>
+        await UpdateCoreAsync(
+            dirPath,
+            _ => newEntries,
+            existingEntry =>
+                newEntries.Any(newEntry =>
+                    HasSameExportIdentity(existingEntry, newEntry)
+                    && ManifestFileFamily.IsSameFamily(existingEntry.File, newEntry.File)
+                ),
+            now,
+            cancellationToken
+        );
 
     public static async ValueTask UpdateAsync(
         string dirPath,
         Func<ExportManifest?, IReadOnlyList<ManifestEntry>> createEntries,
         DateTimeOffset now,
         CancellationToken cancellationToken = default
+    ) =>
+        await UpdateCoreAsync(
+            dirPath,
+            createEntries,
+            null,
+            now,
+            cancellationToken
+        );
+
+    private static bool HasSameExportIdentity(ManifestEntry left, ManifestEntry right) =>
+        left.GuildId == right.GuildId
+        && left.ChannelId == right.ChannelId
+        && left.Format == right.Format;
+
+    private static async ValueTask UpdateCoreAsync(
+        string dirPath,
+        Func<ExportManifest?, IReadOnlyList<ManifestEntry>> createEntries,
+        Func<ManifestEntry, bool>? shouldRemoveExistingEntry,
+        DateTimeOffset now,
+        CancellationToken cancellationToken
     )
     {
         var manifestPath = Path.Combine(dirPath, ExportManifest.FileName);
@@ -55,7 +86,10 @@ public static class ManifestWriter
         if (existing is not null)
         {
             foreach (var entry in existing.Entries)
-                byFile[entry.File] = entry;
+            {
+                if (shouldRemoveExistingEntry?.Invoke(entry) != true)
+                    byFile[entry.File] = entry;
+            }
         }
 
         var newEntries = createEntries(existing);
