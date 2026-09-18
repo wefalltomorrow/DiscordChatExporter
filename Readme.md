@@ -60,8 +60,10 @@ These changes improve request consistency; they are not a guarantee against acco
 
 ### Optional resilient PowerShell wrapper
 
-`scripts/Export-Guild-Resilient.ps1` provides an additional belt-and-suspenders whole-server export
-workflow with persistent completed/skipped state, retry classification, and compact live progress.
+`scripts/Export-Guild-Resilient.ps1` wraps the native `exportguild --resume` workflow. It preserves the
+CLI's normal in-place progress display, uses `manifest.json` checkpoints to skip verified completed
+channels, automatically retries unfinished channels, and avoids the old per-channel `/channels/{id}`
+resolution problem.
 
 ## Formats
 
