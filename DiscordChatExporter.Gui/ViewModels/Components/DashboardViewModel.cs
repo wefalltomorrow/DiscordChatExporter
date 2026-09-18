@@ -122,6 +122,7 @@ public partial class DashboardViewModel : ViewModelBase
             AvailableChannels = null;
             SelectedChannels.Clear();
 
+            _discord?.Dispose();
             _discord = new DiscordClient(token, _settingsService.RateLimitPreference);
             _settingsService.LastToken = token;
 
@@ -328,6 +329,7 @@ public partial class DashboardViewModel : ViewModelBase
     {
         if (disposing)
         {
+            _discord?.Dispose();
             _eventSubscription.Dispose();
         }
 
