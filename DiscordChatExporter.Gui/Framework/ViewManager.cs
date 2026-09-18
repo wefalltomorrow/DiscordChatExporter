@@ -1,3 +1,7 @@
+using System;
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
 using DiscordChatExporter.Gui.ViewModels;
@@ -11,16 +15,43 @@ namespace DiscordChatExporter.Gui.Framework;
 
 public partial class ViewManager
 {
+    private readonly object _initializationLock = new();
+    private readonly ConditionalWeakTable<ViewModelBase, object> _initializedViewModels = new();
+
+    private static readonly object InitializedViewModelMarker = new();
+
     private Control? TryCreateView(ViewModelBase viewModel) =>
         viewModel switch
         {
             MainViewModel => new MainView(),
             DashboardViewModel => new DashboardView(),
+            LibraryViewModel => new LibraryView(),
+            ConversionViewModel => new ConversionView(),
             ExportSetupViewModel => new ExportSetupView(),
             MessageBoxViewModel => new MessageBoxView(),
             SettingsViewModel => new SettingsView(),
             _ => null,
         };
+
+    internal async Task InitializeViewModelOnceAsync(ViewModelBase viewModel)
+    {
+        lock (_initializationLock)
+        {
+            if (_initializedViewModels.TryGetValue(viewModel, out _))
+                return;
+
+            _initializedViewModels.Add(viewModel, InitializedViewModelMarker);
+        }
+
+        try
+        {
+            await viewModel.InitializeAsync();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine(ex);
+        }
+    }
 
     public Control? TryBindView(ViewModelBase viewModel)
     {
@@ -29,7 +60,7 @@ public partial class ViewManager
             return null;
 
         view.DataContext ??= viewModel;
-        view.Loaded += async (_, _) => await viewModel.InitializeAsync();
+        view.Loaded += async (_, _) => await InitializeViewModelOnceAsync(viewModel);
 
         return view;
     }
