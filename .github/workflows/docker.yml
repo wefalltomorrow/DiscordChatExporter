@@ -53,6 +53,10 @@ jobs:
     permissions:
       contents: read
 
+    env:
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      DOCKER_TOKEN: ${{ secrets.DOCKER_TOKEN }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -61,17 +65,17 @@ jobs:
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       - name: Login to DockerHub
-        run: >
-          echo ${{ secrets.DOCKER_TOKEN }} |
-          docker login --username tyrrrz --password-stdin
+        if: ${{ env.DOCKER_TOKEN != '' && env.DOCKER_USERNAME != '' }}
+        run: echo "$DOCKER_TOKEN" | docker login --username "$DOCKER_USERNAME" --password-stdin
 
       - name: Build & push image
+        if: ${{ env.DOCKER_TOKEN != '' && env.DOCKER_USERNAME != '' }}
         run: >
           docker buildx build .
           --file DiscordChatExporter.Cli.dockerfile
           --platform linux/amd64,linux/arm64
           --build-arg VERSION=${{ github.ref_type == 'tag' && github.ref_name || format('999.9.9-ci-{0}', github.sha) }}
           --push
-          --tag tyrrrz/discordchatexporter:latest
-          ${{ github.ref_type == 'tag' && '--tag tyrrrz/discordchatexporter:$GITHUB_REF_NAME' || '' }}
-          ${{ github.ref_type == 'tag' && '--tag tyrrrz/discordchatexporter:stable' || '' }}
+          --tag $DOCKER_USERNAME/discordchatexporter:latest
+          ${{ github.ref_type == 'tag' && '--tag $DOCKER_USERNAME/discordchatexporter:$GITHUB_REF_NAME' || '' }}
+          ${{ github.ref_type == 'tag' && '--tag $DOCKER_USERNAME/discordchatexporter:stable' || '' }}
