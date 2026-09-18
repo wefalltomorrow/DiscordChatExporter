@@ -61,7 +61,10 @@ public class ClientPropertiesSpecs
             .GetString()
             .Should()
             .Be(DiscordUserClientProfile.BrowserUserAgent);
-        root.GetProperty("browser_version").GetString().Should().Be("152.0.0.0");
+        root.GetProperty("browser_version")
+            .GetString()
+            .Should()
+            .Be($"{DiscordUserClientProfile.BrowserMajorVersion}.0.0.0");
         root.GetProperty("os_version").GetString().Should().Be("10");
         root.GetProperty("release_channel").GetString().Should().Be("stable");
         root.GetProperty("client_build_number").ValueKind.Should().Be(JsonValueKind.Number);
@@ -74,6 +77,14 @@ public class ClientPropertiesSpecs
         root.GetProperty("launch_signature").GetString().Should().Be(launchSignature);
         root.GetProperty("client_heartbeat_session_id").GetString().Should().Be(heartbeatId);
         root.GetProperty("client_app_state").GetString().Should().Be("unfocused");
+    }
+
+    [Fact]
+    public void Browser_major_version_is_consistent_with_user_agent()
+    {
+        DiscordUserClientProfile.BrowserUserAgent
+            .Should()
+            .Contain($"Chrome/{DiscordUserClientProfile.BrowserMajorVersion}.");
     }
 
     [Fact]
