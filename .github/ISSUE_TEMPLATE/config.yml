@@ -1,14 +1,11 @@
-blank_issues_enabled: false
+blank_issues_enabled: true
 contact_links:
-  - name: ⚠ Feature request
-    url: https://github.com/Tyrrrz/.github/blob/prime/docs/project-status.md
-    about: Sorry, but this project is in maintenance mode and currently doesn't accept new feature requests.
   - name: 📖 Documentation
-    url: https://github.com/Tyrrrz/DiscordChatExporter/blob/prime/.docs
+    url: https://github.com/arandomhooman/DiscordChatExporter/tree/prime/.docs
     about: Find usage guides and frequently asked questions.
   - name: 🗨 Discussions
-    url: https://github.com/Tyrrrz/DiscordChatExporter/discussions/new
+    url: https://github.com/arandomhooman/DiscordChatExporter/discussions
     about: Ask and answer questions.
-  - name: 💬 Discord server
-    url: https://discord.gg/2SUWKFnHSm
-    about: Chat with the project community.
+  - name: 📦 Upstream project (Tyrrrz/DiscordChatExporter)
+    url: https://github.com/Tyrrrz/DiscordChatExporter
+    about: This is a fork. Questions about upstream features can be raised there.
