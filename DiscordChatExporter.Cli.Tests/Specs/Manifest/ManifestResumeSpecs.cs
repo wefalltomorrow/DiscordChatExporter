@@ -22,7 +22,12 @@ public class ManifestResumeSpecs
         return Convert.ToHexStringLower(SHA256.HashData(stream));
     }
 
-    private static ManifestEntry Entry(string file, long fileSizeBytes = 0, string sha256 = "x") =>
+    private static ManifestEntry Entry(
+        string file,
+        long fileSizeBytes = 0,
+        string sha256 = "x",
+        bool partitioned = false
+    ) =>
         new(
             "1",
             "g",
@@ -39,7 +44,7 @@ public class ManifestResumeSpecs
             null,
             fileSizeBytes,
             sha256,
-            false,
+            partitioned,
             DateTimeOffset.UnixEpoch
         );
 
@@ -139,6 +144,110 @@ public class ManifestResumeSpecs
 
             File.WriteAllText(filePath, "HELLO");
             ManifestResume.IsAlreadyExported(manifest, dir, request).Should().BeFalse();
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
+    public void Partitioned_resume_requires_every_partition_to_exist_and_match()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "DceManifest_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var basePath = Path.Combine(dir, "archive.json");
+        var part2Path = Path.Combine(dir, "archive [part 2].json");
+
+        try
+        {
+            File.WriteAllText(basePath, "part one");
+            File.WriteAllText(part2Path, "part two");
+
+            var manifest = Manifest(
+                Entry(
+                    "archive.json",
+                    new FileInfo(basePath).Length,
+                    ComputeSha256(basePath),
+                    partitioned: true
+                ),
+                Entry(
+                    "archive [part 2].json",
+                    new FileInfo(part2Path).Length,
+                    ComputeSha256(part2Path),
+                    partitioned: true
+                )
+            );
+            var request = Request(basePath, guildId: 1, channelId: 2);
+
+            ManifestResume.IsAlreadyExported(manifest, dir, request).Should().BeTrue();
+
+            File.Delete(part2Path);
+            ManifestResume.IsAlreadyExported(manifest, dir, request).Should().BeFalse();
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
+    public void Partitioned_resume_rejects_gaps_or_corrupted_later_partitions()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "DceManifest_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var basePath = Path.Combine(dir, "archive.json");
+        var part2Path = Path.Combine(dir, "archive [part 2].json");
+        var part3Path = Path.Combine(dir, "archive [part 3].json");
+
+        try
+        {
+            File.WriteAllText(basePath, "part one");
+            File.WriteAllText(part2Path, "part two");
+            File.WriteAllText(part3Path, "part three");
+
+            var request = Request(basePath, guildId: 1, channelId: 2);
+
+            var missingPartManifest = Manifest(
+                Entry(
+                    "archive.json",
+                    new FileInfo(basePath).Length,
+                    ComputeSha256(basePath),
+                    partitioned: true
+                ),
+                Entry(
+                    "archive [part 3].json",
+                    new FileInfo(part3Path).Length,
+                    ComputeSha256(part3Path),
+                    partitioned: true
+                )
+            );
+
+            ManifestResume.IsAlreadyExported(missingPartManifest, dir, request).Should().BeFalse();
+
+            var completeManifest = Manifest(
+                Entry(
+                    "archive.json",
+                    new FileInfo(basePath).Length,
+                    ComputeSha256(basePath),
+                    partitioned: true
+                ),
+                Entry(
+                    "archive [part 2].json",
+                    new FileInfo(part2Path).Length,
+                    ComputeSha256(part2Path),
+                    partitioned: true
+                ),
+                Entry(
+                    "archive [part 3].json",
+                    new FileInfo(part3Path).Length,
+                    ComputeSha256(part3Path),
+                    partitioned: true
+                )
+            );
+
+            File.WriteAllText(part3Path, "CORRUPTED");
+            ManifestResume.IsAlreadyExported(completeManifest, dir, request).Should().BeFalse();
         }
         finally
         {
