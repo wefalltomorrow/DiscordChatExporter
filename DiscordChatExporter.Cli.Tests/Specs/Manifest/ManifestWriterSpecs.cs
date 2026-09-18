@@ -19,7 +19,11 @@ public class ManifestWriterSpecs : IDisposable
 
     public void Dispose() => Directory.Delete(_dir, true);
 
-    private static ManifestEntry Entry(string file, long messageCount) =>
+    private static ManifestEntry Entry(
+        string file,
+        long messageCount,
+        bool partitioned = false
+    ) =>
         new(
             GuildId: "1",
             GuildName: "g",
@@ -36,7 +40,7 @@ public class ManifestWriterSpecs : IDisposable
             AssetCount: 0,
             FileSizeBytes: 1,
             Sha256: "x",
-            Partitioned: false,
+            Partitioned: partitioned,
             ExportedAt: DateTimeOffset.UnixEpoch
         );
 
@@ -105,6 +109,40 @@ public class ManifestWriterSpecs : IDisposable
         manifest!.Entries.Should().HaveCount(2);
         manifest.Entries.Single(e => e.File == "a.json").MessageCount.Should().Be(99);
         manifest.Entries.Single(e => e.File == "b.json").MessageCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Rewriting_an_export_family_removes_stale_partition_entries()
+    {
+        await ManifestWriter.WriteAsync(
+            _dir,
+            [
+                Entry("archive.json", 10, partitioned: true),
+                Entry("archive [part 2].json", 10, partitioned: true),
+                Entry("archive [part 3].json", 10, partitioned: true),
+                Entry("other.json", 5),
+            ],
+            DateTimeOffset.UnixEpoch
+        );
+
+        await ManifestWriter.WriteAsync(
+            _dir,
+            [
+                Entry("archive.json", 12, partitioned: true),
+                Entry("archive [part 2].json", 3, partitioned: true),
+            ],
+            DateTimeOffset.UnixEpoch
+        );
+
+        var manifest = await ManifestReader.TryReadAsync(
+            Path.Combine(_dir, ExportManifest.FileName)
+        );
+
+        manifest.Should().NotBeNull();
+        manifest!.Entries.Select(e => e.File).Should().BeEquivalentTo(
+            ["archive.json", "archive [part 2].json", "other.json"]
+        );
+        manifest.Entries.Should().NotContain(e => e.File == "archive [part 3].json");
     }
 
     [Fact]
