@@ -173,7 +173,10 @@ public static class JsonExportReader
                 : null,
             json.TryGetProperty("interaction", out var interactionJson)
                 ? ParseInteraction(interactionJson)
-                : null
+                : null,
+            // Polls were added to the live Discord model after the conversion format was designed.
+            // Existing JSON exports do not serialize poll payloads, so there is nothing to restore.
+            null
         );
 
     private static User ParseUser(JsonElement json) =>
