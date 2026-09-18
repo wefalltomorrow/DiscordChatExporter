@@ -56,7 +56,7 @@ For user-token requests, this fork combines:
 - No dependency on a third-party client-properties API.
 - Bot-token requests remain on the normal HttpClient path.
 
-These changes improve request consistency; they are not a guarantee against account restrictions. On Linux, this fork deliberately falls back to the normal managed HTTP transport because HttpCloak's in-process .NET native binding has a currently open host-crash issue under some workloads.
+These changes improve request consistency; they are not a guarantee against account restrictions. On Linux, this fork deliberately falls back to the normal managed HTTP transport because HttpCloak's in-process .NET native binding has a currently open host-crash issue under some workloads. On Windows, set `DISCORDCHATEXPORTER_DISABLE_BROWSER_TRANSPORT=1` to force the managed HTTP path for troubleshooting or compatibility.
 
 ### Optional resilient PowerShell wrapper
 
