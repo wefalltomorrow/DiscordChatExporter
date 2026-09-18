@@ -28,9 +28,17 @@ public class DiscordClient(
 {
     private const int JsonParseRetryAttempts = 5;
 
+    // HttpCloak's in-process .NET native binding currently has an unresolved
+    // host-process crash on Linux. Keep the browser-fingerprint transport on
+    // Windows, where that issue is not reproduced, and retain HttpClient
+    // elsewhere for process stability.
+    internal static bool IsBrowserTransportSupported => OperatingSystem.IsWindows();
+
     private readonly Uri _baseUri = new("https://discord.com/api/v10/", UriKind.Absolute);
     private readonly HttpClient _httpClient = Http.Client;
-    private readonly Session _session = new(preset: Presets.Chrome150Windows, retry: 0);
+    private readonly Session? _session = IsBrowserTransportSupported
+        ? new Session(preset: Presets.Chrome150Windows, retry: 0)
+        : null;
     private readonly DiscordUserClientProfile _userClientProfile = new();
     private readonly Func<TimeSpan, CancellationToken, ValueTask> _delayAsync = static (
         delay,
@@ -50,6 +58,8 @@ public class DiscordClient(
         : this(tokenOverride, rateLimitPreferenceOverride)
     {
         _httpClient = httpClient;
+        _session?.Dispose();
+        _session = null;
         _useBrowserTransport = false;
 
         if (delayAsync is not null)
@@ -112,7 +122,11 @@ public class DiscordClient(
 
                     HttpResponseMessage response;
 
-                    if (tokenKind == TokenKind.User && _useBrowserTransport)
+                    if (
+                        tokenKind == TokenKind.User
+                        && _useBrowserTransport
+                        && _session is not null
+                    )
                     {
                         await _userClientProfile.AddHeadersAsync(
                             headers,
@@ -1248,5 +1262,5 @@ public class DiscordClient(
         }
     }
 
-    public void Dispose() => _session.Dispose();
+    public void Dispose() => _session?.Dispose();
 }
