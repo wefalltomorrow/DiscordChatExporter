@@ -44,7 +44,7 @@ public class DiscordClient(
         delay,
         cancellationToken
     ) => new ValueTask(Task.Delay(delay, cancellationToken));
-    private readonly bool _useBrowserTransport = true;
+    private readonly bool _useBrowserTransport = IsBrowserTransportSupported;
     private TokenKind? _resolvedTokenKind;
 
     public event EventHandler<RateLimitState>? RateLimitChanged;
