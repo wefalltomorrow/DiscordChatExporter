@@ -48,8 +48,8 @@ public partial class GetChannelsCommand : DiscordCommandBase
         var threads =
             ThreadInclusionMode != ThreadInclusionMode.None
                 ? (
-                    await Discord.GetGuildThreadsAsync(
-                        GuildId,
+                    await Discord.GetChannelThreadsAsync(
+                        channels,
                         ThreadInclusionMode == ThreadInclusionMode.All,
                         null,
                         null,
