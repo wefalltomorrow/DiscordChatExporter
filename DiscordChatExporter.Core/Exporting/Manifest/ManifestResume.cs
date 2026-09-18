@@ -7,11 +7,8 @@ using System.Threading;
 
 namespace DiscordChatExporter.Core.Exporting.Manifest;
 
-public static partial class ManifestResume
+public static class ManifestResume
 {
-    [GeneratedRegex(@" \[part (\d+)\]$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex ManifestFileFamily.PartitionSuffixRegex();
-
     public static bool IsAlreadyExported(
         ExportManifest? manifest,
         string dirPath,
@@ -39,14 +36,11 @@ public static partial class ManifestResume
 
         // For partitioned exports, validating only the first file can incorrectly mark a
         // partially deleted/corrupted export as complete. Verify the whole partition family.
-        var stem = Path.GetFileNameWithoutExtension(baseFileName);
-        var extension = Path.GetExtension(baseFileName);
-
         var family = manifest
             .Entries.Where(e =>
                 e.Partitioned
                 && IsSameExportIdentity(e, request)
-                && IsPartitionFamilyMember(e.File, stem, extension)
+                && ManifestFileFamily.IsSameFamily(e.File, baseFileName)
             )
             .ToArray();
 
@@ -99,32 +93,6 @@ public static partial class ManifestResume
         entry.GuildId == request.Guild.Id.ToString()
         && entry.ChannelId == request.Channel.Id.ToString()
         && entry.Format == request.Format.ToString();
-
-    private static bool IsPartitionFamilyMember(string fileName, string stem, string extension)
-    {
-        if (
-            string.Equals(
-                fileName,
-                stem + extension,
-                StringComparison.OrdinalIgnoreCase
-            )
-        )
-        {
-            return true;
-        }
-
-        if (!string.Equals(Path.GetExtension(fileName), extension, StringComparison.OrdinalIgnoreCase))
-            return false;
-
-        var nameWithoutExtension = Path.GetFileNameWithoutExtension(fileName);
-        if (!nameWithoutExtension.StartsWith(stem + " [part ", StringComparison.OrdinalIgnoreCase))
-            return false;
-
-        var match = ManifestFileFamily.PartitionSuffixRegex().Match(nameWithoutExtension);
-        return match.Success
-            && match.Index == stem.Length
-            && match.Length == nameWithoutExtension.Length - stem.Length;
-    }
 
     private static bool IsEntryIntact(
         ManifestEntry entry,
