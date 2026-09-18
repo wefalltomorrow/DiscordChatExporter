@@ -11,8 +11,8 @@
 # Example:
 #   .\Export-Guild-Resilient.ps1 -Token $env:DCE_TOKEN -GuildId 123456789012345678 -OutputDirectory "C:\Discord Exports\My Server" -Format Csv
 #
-# Extra DCE options can be appended after --, for example:
-#   .\Export-Guild-Resilient.ps1 ... -- --media --reuse-media --include-threads all
+# Extra DCE options can be supplied with -DceArguments, for example:
+#   .\Export-Guild-Resilient.ps1 ... -DceArguments @('--media', '--reuse-media', '--include-threads', 'all')
 
 [CmdletBinding()]
 param(
@@ -44,8 +44,7 @@ param(
 
     [switch]$ResetState,
 
-    [Parameter(ValueFromRemainingArguments)]
-    [string[]]$AdditionalArguments
+    [string[]]$DceArguments = @()
 )
 
 $ErrorActionPreference = 'Stop'
@@ -164,8 +163,8 @@ $ExportArgs = @(
     '--fuck-russia'
 )
 
-if ($AdditionalArguments) {
-    $ExportArgs += $AdditionalArguments
+if ($DceArguments) {
+    $ExportArgs += $DceArguments
 }
 
 
