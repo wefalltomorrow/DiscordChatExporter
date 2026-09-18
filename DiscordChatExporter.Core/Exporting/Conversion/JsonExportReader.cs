@@ -11,6 +11,7 @@ using DiscordChatExporter.Core.Discord;
 using DiscordChatExporter.Core.Discord.Data;
 using DiscordChatExporter.Core.Discord.Data.Common;
 using DiscordChatExporter.Core.Discord.Data.Embeds;
+using DiscordChatExporter.Core.Discord.Data.Polls;
 using DiscordChatExporter.Core.Exporting.Continuation;
 using PowerKit.Extensions;
 
@@ -174,9 +175,7 @@ public static class JsonExportReader
             json.TryGetProperty("interaction", out var interactionJson)
                 ? ParseInteraction(interactionJson)
                 : null,
-            // Polls were added to the live Discord model after the conversion format was designed.
-            // Existing JSON exports do not serialize poll payloads, so there is nothing to restore.
-            null
+            json.TryGetProperty("poll", out var pollJson) ? ParsePoll(pollJson) : null
         );
 
     private static User ParseUser(JsonElement json) =>
@@ -358,6 +357,37 @@ public static class JsonExportReader
         {
             ImageUrlOverride = GetAssetUrlOrNull(json, "imageUrl"),
         };
+
+    private static Poll ParsePoll(JsonElement json) =>
+        new(
+            GetString(json, "question"),
+            ParseArray(json, "answers", ParsePollAnswer),
+            ParseDateOrNull(json, "expiresAt"),
+            GetBoolean(json, "allowsMultipleAnswers"),
+            json.TryGetProperty("results", out var resultsJson)
+                ? ParsePollResults(resultsJson)
+                : null
+        );
+
+    private static PollAnswer ParsePollAnswer(JsonElement json) =>
+        new(
+            GetInt32(json, "id"),
+            GetString(json, "text"),
+            json.TryGetProperty("emoji", out var emojiJson) ? ParseEmoji(emojiJson) : null
+        );
+
+    private static PollResults ParsePollResults(JsonElement json) =>
+        new(
+            GetBoolean(json, "isFinalized"),
+            ParseArray(json, "answers", ParsePollAnswerResult)
+        );
+
+    private static PollAnswerResult ParsePollAnswerResult(JsonElement json) =>
+        new(
+            GetInt32(json, "id"),
+            GetInt32(json, "count"),
+            GetBoolean(json, "didCurrentUserVote")
+        );
 
     private static MessageReference ParseMessageReference(JsonElement json) =>
         new(
