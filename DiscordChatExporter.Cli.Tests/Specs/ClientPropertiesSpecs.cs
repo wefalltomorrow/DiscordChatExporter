@@ -79,6 +79,34 @@ public class ClientPropertiesSpecs
         root.GetProperty("client_app_state").GetString().Should().Be("unfocused");
     }
 
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData("", true)]
+    [InlineData("0", true)]
+    [InlineData("false", true)]
+    [InlineData("1", false)]
+    [InlineData("true", false)]
+    [InlineData("yes", false)]
+    [InlineData("on", false)]
+    public void Browser_transport_can_be_disabled_explicitly(
+        string? disabledValue,
+        bool expected
+    )
+    {
+        DiscordUserClientProfile.BrowserMajorVersion.Should().BePositive();
+
+        DiscordClient
+            .ShouldUseBrowserTransport(disabledValue, isWindows: true)
+            .Should()
+            .Be(expected);
+    }
+
+    [Fact]
+    public void Browser_transport_is_never_enabled_on_non_windows_hosts()
+    {
+        DiscordClient.ShouldUseBrowserTransport(null, isWindows: false).Should().BeFalse();
+    }
+
     [Fact]
     public void Browser_major_version_is_consistent_with_user_agent()
     {
