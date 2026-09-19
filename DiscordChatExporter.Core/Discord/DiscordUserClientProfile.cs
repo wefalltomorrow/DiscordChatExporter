@@ -38,10 +38,12 @@ internal sealed class DiscordUserClientProfile
 
     public async ValueTask AddHeadersAsync(
         Dictionary<string, string> headers,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        bool refreshClientBuildNumber = true
     )
     {
-        await RefreshClientBuildNumberAsync(cancellationToken);
+        if (refreshClientBuildNumber)
+            await RefreshClientBuildNumberAsync(cancellationToken);
 
         headers["User-Agent"] = BrowserUserAgent;
         headers["X-Super-Properties"] = GetXSuperPropertiesHeader();
