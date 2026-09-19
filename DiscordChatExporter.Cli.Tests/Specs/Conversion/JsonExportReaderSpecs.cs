@@ -220,10 +220,7 @@ public sealed class JsonExportReaderSpecs : IDisposable
                         true,
                         new PollResults(
                             true,
-                            [
-                                new PollAnswerResult(1, 7, true),
-                                new PollAnswerResult(2, 3, false),
-                            ]
+                            [new PollAnswerResult(1, 7, true), new PollAnswerResult(2, 3, false)]
                         )
                     ),
                 }
