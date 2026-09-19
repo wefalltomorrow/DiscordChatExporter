@@ -1,11 +1,14 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using DiscordChatExporter.Core.Discord;
 using DiscordChatExporter.Core.Discord.Data;
 using DiscordChatExporter.Core.Discord.Data.Embeds;
 using DiscordChatExporter.Core.Discord.Data.Polls;
@@ -53,6 +56,17 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
         _writer.WriteString("color", color?.ToHexString());
         _writer.WriteBoolean("isBot", user.IsBot);
 
+        if (_isExtended)
+        {
+            _writer.WriteString("joinedAt", member?.JoinedAt?.Pipe(Context.NormalizeDate));
+            _writer.WriteString("premiumSince", member?.PremiumSince?.Pipe(Context.NormalizeDate));
+            _writer.WriteBoolean("isPending", member?.IsPending ?? false);
+
+            // Decomposed rather than written as a bitfield, so that a reader doesn't need to know
+            // the bit values. Bits Discord has added since are kept as their numeric value.
+            WriteReferenceArray("flags", GetFlagNames(member?.Flags ?? MemberFlags.None));
+        }
+
         if (includeRoles)
         {
             _writer.WritePropertyName("roles");
@@ -67,16 +81,163 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
             )
         );
 
+        if (_isExtended)
+        {
+            // Same precedence as the avatar: a guild-specific banner wins over the global one.
+            // Unlike the avatar there is no fallback, so this stays null when neither is set.
+            //
+            // The member's own copy of the user is consulted before the one we were handed,
+            // because the latter often comes from a message payload, where Discord sends only a
+            // partial user object with no banner on it at all.
+            var bannerUrl = member?.BannerUrl ?? member?.User.BannerUrl ?? user.BannerUrl;
+
+            _writer.WriteString(
+                "bannerUrl",
+                bannerUrl is not null
+                    ? await Context.ResolveAssetUrlAsync(bannerUrl, cancellationToken)
+                    : null
+            );
+        }
+
         _writer.WriteEndObject();
+        await _writer.FlushAsync(cancellationToken);
+    }
+
+    // A [Flags] enum's own ToString collapses to the raw number as soon as one bit is unknown,
+    // which would hide the flags that *are* recognized. This keeps both.
+    private static IEnumerable<string> GetFlagNames<T>(T flags)
+        where T : struct, Enum
+    {
+        var remaining = Convert.ToInt32(flags, CultureInfo.InvariantCulture);
+
+        foreach (var value in Enum.GetValues<T>())
+        {
+            var bit = Convert.ToInt32(value, CultureInfo.InvariantCulture);
+
+            if (bit == 0 || (remaining & bit) == 0)
+                continue;
+
+            remaining &= ~bit;
+            yield return value.ToString();
+        }
+
+        if (remaining != 0)
+            yield return remaining.ToString(CultureInfo.InvariantCulture);
+    }
+
+    private static string ToCamelCase(string name)
+    {
+        if (!name.Contains('_', StringComparison.Ordinal))
+            return name;
+
+        var buffer = new StringBuilder(name.Length);
+        var shouldCapitalize = false;
+
+        foreach (var c in name)
+        {
+            if (c == '_')
+            {
+                shouldCapitalize = true;
+                continue;
+            }
+
+            buffer.Append(shouldCapitalize ? char.ToUpperInvariant(c) : c);
+            shouldCapitalize = false;
+        }
+
+        return buffer.ToString();
+    }
+
+    // The component tree is mirrored rather than projected, for the reason given on the Component
+    // record: only the property names are changed, from the API's snake_case to the camelCase used
+    // by every other key in this document. That transform is mechanical and reversible, so the
+    // result can still be read against Discord's own component documentation.
+    private async ValueTask WriteComponentJsonAsync(
+        JsonElement json,
+        bool isMedia = false,
+        CancellationToken cancellationToken = default
+    )
+    {
+        switch (json.ValueKind)
+        {
+            case JsonValueKind.Object:
+                _writer.WriteStartObject();
+
+                foreach (var property in json.EnumerateObject())
+                {
+                    _writer.WritePropertyName(ToCamelCase(property.Name));
+
+                    // Media referenced by a component lives on the CDN behind a signed URL that
+                    // expires within the day, so it has to go through the asset pipeline like an
+                    // attachment does. Only media objects are treated this way: a link button also
+                    // carries a 'url', but that one points at an arbitrary site rather than at a
+                    // downloadable asset.
+                    if (
+                        isMedia
+                        && property.Value.ValueKind is JsonValueKind.String
+                        && property.Name is "url" or "proxy_url"
+                    )
+                    {
+                        _writer.WriteStringValue(
+                            await Context.ResolveAssetUrlAsync(
+                                property.Value.GetString() ?? "",
+                                cancellationToken
+                            )
+                        );
+                    }
+                    else
+                    {
+                        await WriteComponentJsonAsync(
+                            property.Value,
+                            property.NameEquals("media") || property.NameEquals("file"),
+                            cancellationToken
+                        );
+                    }
+                }
+
+                _writer.WriteEndObject();
+                break;
+
+            case JsonValueKind.Array:
+                _writer.WriteStartArray();
+
+                foreach (var item in json.EnumerateArray())
+                    await WriteComponentJsonAsync(item, isMedia, cancellationToken);
+
+                _writer.WriteEndArray();
+                break;
+
+            default:
+                json.WriteTo(_writer);
+                break;
+        }
+    }
+
+    private async ValueTask WriteComponentsAsync(
+        IReadOnlyList<Component> components,
+        CancellationToken cancellationToken = default
+    )
+    {
+        _writer.WriteStartArray("components");
+
+        foreach (var component in components)
+            await WriteComponentJsonAsync(component.Json, cancellationToken: cancellationToken);
+
+        _writer.WriteEndArray();
         await _writer.FlushAsync(cancellationToken);
     }
 
     private async ValueTask WriteEmojiAsync(
         Emoji emoji,
+        string? key = null,
         CancellationToken cancellationToken = default
     )
     {
         _writer.WriteStartObject();
+
+        // Only present on table entries, where it's the value that messages reference
+        if (key is not null)
+            _writer.WriteString("key", key);
 
         _writer.WriteString("id", emoji.Id.ToString());
         _writer.WriteString("name", emoji.Name);
@@ -341,9 +502,14 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
         _writer.WriteEndArray();
 
         // Inline emoji
-        _writer.WriteStartArray("inlineEmojis");
+        IEnumerable<Emoji> inlineEmojis = !string.IsNullOrWhiteSpace(embed.Description)
+            ? MarkdownParser
+                .ExtractEmojis(embed.Description)
+                .DistinctBy(e => e.Name, StringComparer.Ordinal)
+                .Select(e => new Emoji(e.Id, e.Name, e.IsAnimated))
+            : [];
 
-        if (!string.IsNullOrWhiteSpace(embed.Description))
+        if (_isNormalized)
         {
             foreach (
                 var emoji in MarkdownParser
@@ -357,8 +523,15 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
                 );
             }
         }
+        else
+        {
+            _writer.WriteStartArray("inlineEmojis");
 
-        _writer.WriteEndArray();
+            foreach (var emoji in inlineEmojis)
+                await WriteEmojiAsync(emoji, cancellationToken: cancellationToken);
+
+            _writer.WriteEndArray();
+        }
 
         _writer.WriteEndObject();
         await _writer.FlushAsync(cancellationToken);
@@ -492,15 +665,29 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
         // Root object (start)
         _writer.WriteStartObject();
 
+        // Modifications made by this fork, so that parsers can detect them up-front
+        _writer.WriteStartObject("mod");
+        _writer.WriteBoolean("normal", _isNormalized);
+        _writer.WriteBoolean("extended", _isExtended);
+        _writer.WriteBoolean("reactionUsers", _shouldFetchReactionUsers);
+        // Provenance: member data in this export may be up to the cache TTL old
+        _writer.WriteBoolean("cache", Context.Request.IsCacheEnabled);
+        _writer.WriteEndObject();
+
         // Guild
+        var guild = Context.Request.Guild;
+
         _writer.WriteStartObject("guild");
-        _writer.WriteString("id", Context.Request.Guild.Id.ToString());
-        _writer.WriteString("name", Context.Request.Guild.Name);
+        _writer.WriteString("id", guild.Id.ToString());
+        _writer.WriteString("name", guild.Name);
 
         _writer.WriteString(
             "iconUrl",
-            await Context.ResolveAssetUrlAsync(Context.Request.Guild.IconUrl, cancellationToken)
+            await Context.ResolveAssetUrlAsync(guild.IconUrl, cancellationToken)
         );
+
+        if (_isExtended)
+            await WriteGuildExtrasAsync(guild, cancellationToken);
 
         _writer.WriteEndObject();
 
@@ -526,6 +713,9 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
                 )
             );
         }
+
+        if (_isExtended)
+            await WriteChannelExtrasAsync(Context.Request.Channel, cancellationToken);
 
         _writer.WriteEndObject();
 
@@ -567,6 +757,9 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
         );
         _writer.WriteBoolean("isPinned", message.IsPinned);
 
+        if (_isExtended)
+            WriteReferenceArray("flags", GetFlagNames(message.Flags));
+
         // Content
         if (message.IsSystemNotification)
         {
@@ -583,10 +776,18 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
         }
 
         // Author
-        _writer.WritePropertyName("author");
-        await WriteUserAsync(message.Author, true, cancellationToken);
+        if (_isNormalized)
+        {
+            _writer.WriteString("authorId", RegisterUser(message.Author));
+        }
+        else
+        {
+            _writer.WritePropertyName("author");
+            await WriteUserAsync(message.Author, true, cancellationToken);
+        }
 
         // Attachments
+        // Not normalized: an attachment belongs to exactly one message, so it never repeats
         _writer.WriteStartArray("attachments");
 
         foreach (var attachment in message.Attachments)
@@ -603,12 +804,11 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
         _writer.WriteEndArray();
 
         // Stickers
-        _writer.WriteStartArray("stickers");
+        await WriteStickersAsync(message.Stickers, cancellationToken);
 
-        foreach (var sticker in message.Stickers)
-            await WriteStickerAsync(sticker, cancellationToken);
-
-        _writer.WriteEndArray();
+        // Components
+        if (_isExtended)
+            await WriteComponentsAsync(message.Components, cancellationToken);
 
         // Reactions
         _writer.WriteStartArray("reactions");
@@ -618,24 +818,45 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
             _writer.WriteStartObject();
 
             // Emoji
-            _writer.WritePropertyName("emoji");
-            await WriteEmojiAsync(reaction.Emoji, cancellationToken);
+            if (_isNormalized)
+            {
+                _writer.WriteString("emojiKey", RegisterEmoji(reaction.Emoji));
+            }
+            else
+            {
+                _writer.WritePropertyName("emoji");
+                await WriteEmojiAsync(reaction.Emoji, cancellationToken: cancellationToken);
+            }
 
             _writer.WriteNumber("count", reaction.Count);
 
             // Reaction authors
-            _writer.WriteStartArray("users");
+            if (_isNormalized)
+                _writer.WriteStartArray("userIds");
+            else
+                _writer.WriteStartArray("users");
 
-            await foreach (
-                var user in Context.Discord.GetMessageReactionsAsync(
-                    Context.Request.Channel.Id,
-                    message.Id,
-                    reaction.Emoji,
-                    cancellationToken
-                )
-            )
+            // Fetching the reacting users costs a request per 100 of them, per reaction, which
+            // is the single most expensive thing this exporter does. The emoji and the count come
+            // free with the message itself, so they are written either way; only the list is
+            // skipped. It stays an empty array rather than being omitted, so that the schema is
+            // the same in both cases, with 'mod.reactionUsers' recording which one this is.
+            if (_shouldFetchReactionUsers)
             {
-                await WriteUserAsync(user, false, cancellationToken);
+                await foreach (
+                    var user in Context.Discord.GetMessageReactionsAsync(
+                        Context.Request.Channel.Id,
+                        message.Id,
+                        reaction.Emoji,
+                        cancellationToken
+                    )
+                )
+                {
+                    if (_isNormalized)
+                        _writer.WriteStringValue(RegisterUser(user));
+                    else
+                        await WriteUserAsync(user, false, cancellationToken);
+                }
             }
 
             _writer.WriteEndArray();
@@ -646,11 +867,19 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
         _writer.WriteEndArray();
 
         // Mentions
-        _writer.WriteStartArray("mentions");
-        foreach (var user in message.MentionedUsers)
-            await WriteUserAsync(user, true, cancellationToken);
+        if (_isNormalized)
+        {
+            WriteReferenceArray("mentionIds", message.MentionedUsers.Select(RegisterUser));
+        }
+        else
+        {
+            _writer.WriteStartArray("mentions");
 
-        _writer.WriteEndArray();
+            foreach (var user in message.MentionedUsers)
+                await WriteUserAsync(user, true, cancellationToken);
+
+            _writer.WriteEndArray();
+        }
 
         // Message reference
         if (message.Reference is not null)
@@ -703,10 +932,11 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
             _writer.WriteEndArray();
 
             // Forwarded stickers
-            _writer.WriteStartArray("stickers");
+            await WriteStickersAsync(message.ForwardedMessage.Stickers, cancellationToken);
 
-            foreach (var sticker in message.ForwardedMessage.Stickers)
-                await WriteStickerAsync(sticker, cancellationToken);
+            // Forwarded components
+            if (_isExtended)
+                await WriteComponentsAsync(message.ForwardedMessage.Components, cancellationToken);
 
             _writer.WriteEndArray();
 
@@ -735,8 +965,15 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
             _writer.WriteString("id", message.Interaction.Id.ToString());
             _writer.WriteString("name", message.Interaction.Name);
 
-            _writer.WritePropertyName("user");
-            await WriteUserAsync(message.Interaction.User, true, cancellationToken);
+            if (_isNormalized)
+            {
+                _writer.WriteString("userId", RegisterUser(message.Interaction.User));
+            }
+            else
+            {
+                _writer.WritePropertyName("user");
+                await WriteUserAsync(message.Interaction.User, true, cancellationToken);
+            }
 
             _writer.WriteEndObject();
         }
@@ -749,7 +986,10 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
         }
 
         // Inline emoji
-        _writer.WriteStartArray("inlineEmojis");
+        var inlineEmojis = MarkdownParser
+            .ExtractEmojis(message.Content)
+            .DistinctBy(e => e.Name, StringComparer.Ordinal)
+            .Select(e => new Emoji(e.Id, e.Name, e.IsAnimated));
 
         foreach (
             var emoji in MarkdownParser
@@ -757,13 +997,17 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
                 .DistinctBy(e => (e.Id, e.Name, e.IsAnimated))
         )
         {
-            await WriteEmojiAsync(
-                new Emoji(emoji.Id, emoji.Name, emoji.IsAnimated),
-                cancellationToken
-            );
+            WriteReferenceArray("inlineEmojiKeys", inlineEmojis.Select(RegisterEmoji));
         }
+        else
+        {
+            _writer.WriteStartArray("inlineEmojis");
 
-        _writer.WriteEndArray();
+            foreach (var emoji in inlineEmojis)
+                await WriteEmojiAsync(emoji, cancellationToken: cancellationToken);
+
+            _writer.WriteEndArray();
+        }
 
         _writer.WriteEndObject();
         await _writer.FlushAsync(cancellationToken);
@@ -860,6 +1104,9 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
     {
         // Message array (end)
         _writer.WriteEndArray();
+
+        if (_isNormalized)
+            await WriteLookupTablesAsync(cancellationToken);
 
         _writer.WriteNumber("messageCount", MessagesWritten);
 
