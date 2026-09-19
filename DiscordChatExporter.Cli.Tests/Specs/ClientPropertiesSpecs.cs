@@ -164,7 +164,8 @@ public class ClientPropertiesSpecs
 
         buildNumber.Should().Be(594503);
         DiscordUserClientProfile.TryParseClientBuildNumber("<html></html>").Should().BeNull();
-        DiscordUserClientProfile.TryParseClientBuildNumber("\"BUILD_NUMBER\":\"abc\"")
+        DiscordUserClientProfile
+            .TryParseClientBuildNumber("\"BUILD_NUMBER\":\"abc\"")
             .Should()
             .BeNull();
     }
