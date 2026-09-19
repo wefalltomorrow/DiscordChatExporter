@@ -18,8 +18,7 @@ public class JsonRetrySpecs
     [Fact]
     public async Task Retries_the_exact_json_request_after_a_truncated_response()
     {
-        var handler = new QueueHttpMessageHandler(
-            [
+        var handler = new QueueHttpMessageHandler([
                 // Token-kind probe.
                 new HttpResponseMessage(HttpStatusCode.OK),
 
@@ -38,8 +37,7 @@ public class JsonRetrySpecs
                     }
                     """
                 ),
-            ]
-        );
+        ]);
 
         using var httpClient = new HttpClient(handler);
         using var discord = new DiscordClient(
@@ -59,8 +57,7 @@ public class JsonRetrySpecs
     [Fact]
     public async Task Managed_fallback_still_sends_official_web_user_headers()
     {
-        var handler = new QueueHttpMessageHandler(
-            [
+        var handler = new QueueHttpMessageHandler([
                 // Token-kind probe.
                 new HttpResponseMessage(HttpStatusCode.OK),
 
@@ -75,8 +72,7 @@ public class JsonRetrySpecs
                     }
                     """
                 ),
-            ]
-        );
+        ]);
 
         using var httpClient = new HttpClient(handler);
         using var discord = new DiscordClient(
