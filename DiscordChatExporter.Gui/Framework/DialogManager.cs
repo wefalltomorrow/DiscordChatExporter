@@ -47,6 +47,7 @@ public class DialogManager : IDisposable
         }
         finally
         {
+            dialog.Dispose();
             _dialogLock.Release();
         }
     }
@@ -93,6 +94,56 @@ public class DialogManager : IDisposable
             return null;
 
         return directory.TryGetLocalPath() ?? directory.Path.ToString();
+    }
+
+    public async Task<string?> PromptSingleFilePathAsync(
+        IReadOnlyList<FilePickerFileType>? fileTypes = null,
+        string defaultDirPath = ""
+    )
+    {
+        var topLevel =
+            Application.Current?.ApplicationLifetime?.TryGetTopLevel()
+            ?? throw new ApplicationException("Could not find the top-level visual element.");
+
+        var files = await topLevel.StorageProvider.OpenFilePickerAsync(
+            new FilePickerOpenOptions
+            {
+                AllowMultiple = false,
+                FileTypeFilter = fileTypes,
+                SuggestedStartLocation = string.IsNullOrWhiteSpace(defaultDirPath)
+                    ? null
+                    : await topLevel.StorageProvider.TryGetFolderFromPathAsync(defaultDirPath),
+            }
+        );
+
+        var file = files.FirstOrDefault();
+        if (file is null)
+            return null;
+
+        return file.TryGetLocalPath() ?? file.Path.ToString();
+    }
+
+    public async Task<IReadOnlyList<string>> PromptMultipleFilePathsAsync(
+        IReadOnlyList<FilePickerFileType>? fileTypes = null,
+        string defaultDirPath = ""
+    )
+    {
+        var topLevel =
+            Application.Current?.ApplicationLifetime?.TryGetTopLevel()
+            ?? throw new ApplicationException("Could not find the top-level visual element.");
+
+        var files = await topLevel.StorageProvider.OpenFilePickerAsync(
+            new FilePickerOpenOptions
+            {
+                AllowMultiple = true,
+                FileTypeFilter = fileTypes,
+                SuggestedStartLocation = string.IsNullOrWhiteSpace(defaultDirPath)
+                    ? null
+                    : await topLevel.StorageProvider.TryGetFolderFromPathAsync(defaultDirPath),
+            }
+        );
+
+        return files.Select(f => f.TryGetLocalPath() ?? f.Path.ToString()).ToArray();
     }
 
     public void Dispose() => _dialogLock.Dispose();

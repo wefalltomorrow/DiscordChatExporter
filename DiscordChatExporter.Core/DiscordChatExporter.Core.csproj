@@ -1,10 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <InternalsVisibleTo Include="DiscordChatExporter.Cli.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="AngleSharp" />
     <PackageReference Include="AsyncKeyedLock" />
     <PackageReference Include="CSharpier.MsBuild" PrivateAssets="all" />
     <PackageReference Include="Gress" />
+    <PackageReference Include="HttpCloak" />
     <PackageReference Include="JsonExtensions" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
     <PackageReference Include="Polly" />
     <PackageReference Include="PowerKit" />
     <PackageReference Include="RazorBlade" />

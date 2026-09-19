@@ -1,85 +1,123 @@
-# DiscordChatExporter
+# DiscordChatExporter — Best-of-All Fork
 
-[![Status](https://img.shields.io/badge/status-maintenance-ffd700.svg)](https://github.com/Tyrrrz/.github/blob/prime/docs/project-status.md)
-[![Made in Ukraine](https://img.shields.io/badge/made_in-ukraine-ffd700.svg?labelColor=0057b7)](https://tyrrrz.me/ukraine)
-[![Build](https://img.shields.io/github/actions/workflow/status/Tyrrrz/DiscordChatExporter/main.yml?branch=prime)](https://github.com/Tyrrrz/DiscordChatExporter/actions)
-[![Coverage](https://img.shields.io/codecov/c/github/Tyrrrz/DiscordChatExporter/prime)](https://codecov.io/gh/Tyrrrz/DiscordChatExporter)
-[![Release](https://img.shields.io/github/release/Tyrrrz/DiscordChatExporter.svg)](https://github.com/Tyrrrz/DiscordChatExporter/releases)
-[![Downloads](https://img.shields.io/github/downloads/Tyrrrz/DiscordChatExporter/total.svg)](https://github.com/Tyrrrz/DiscordChatExporter/releases)
-[![Pulls](https://img.shields.io/docker/pulls/tyrrrz/discordchatexporter)](https://hub.docker.com/r/tyrrrz/discordchatexporter)
-[![Discord](https://img.shields.io/discord/869237470565392384?label=discord)](https://discord.gg/2SUWKFnHSm)
-[![Fuck Russia](https://img.shields.io/badge/fuck-russia-e4181c.svg?labelColor=000000)](https://twitter.com/tyrrrz/status/1495972128977571848)
+[![Build](https://img.shields.io/github/actions/workflow/status/wefalltomorrow/DiscordChatExporter/main.yml?branch=prime)](https://github.com/wefalltomorrow/DiscordChatExporter/actions)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](License.txt)
 
-<table>
-    <tr>
-        <td width="99999" align="center">Development of this project is entirely funded by the community. <b><a href="https://tyrrrz.me/donate">Consider donating to support!</a></b></td>
-    </tr>
-</table>
+This fork combines the current upstream **Tyrrrz/DiscordChatExporter** codebase with the strongest
+reliability, continuation, search, conversion, and user-request transport work from several community
+forks, while preserving newer upstream fixes such as poll rendering, thread-starter handling, safer
+HTML links, and current media/output-path fixes.
 
 <p align="center">
     <img src="favicon.png" alt="Icon" />
 </p>
 
-**DiscordChatExporter** is an application that can be used to export message history from any [Discord](https://discord.com) channel to a file.
-It works with direct messages, group messages, and server channels, and supports Discord's dialect of markdown as well as most other rich media features.
+**DiscordChatExporter** exports Discord channel history from direct messages, group messages, and
+servers to portable files, with support for Discord markdown and rich media.
 
 > [!WARNING]
-> While **DiscordChatExporter** allows it, automating user accounts is against Discord TOS and may result in you getting banned.
-> If possible, use a bot to export chat logs from accessible channels.
+> DiscordChatExporter can authenticate with user or bot tokens. Automating a user account may be
+> restricted by Discord's terms or anti-abuse systems. A bot is preferable where it has access to
+> the channels you need.
 
-## Terms of use<sup>[[?]](https://github.com/Tyrrrz/.github/blob/prime/docs/why-so-political.md)</sup>
+## What this fork adds
 
-By using this project or its source code, for any purpose and in any shape or form, you grant your **implicit agreement** to all the following statements:
+### Native resilient exporting
 
-- You **condemn Russia and its military aggression against Ukraine**
-- You **recognize that Russia is an occupant that unlawfully invaded a sovereign state**
-- You **support Ukraine's territorial integrity, including its claims over temporarily occupied territories of Crimea and Donbas**
-- You **reject false narratives perpetuated by Russian state propaganda**
+- **Continue/resume exports** for JSON, HTML, CSV, and SQLite.
+- **Whole-server continuation** using an export catalog/manifest instead of restarting completed work.
+- **Per-channel checkpointing** so interrupted multi-channel jobs can skip completed channels.
+- **Retry failed channels** without rerunning successful channels.
+- **Request-level malformed/truncated JSON retry**: a bad Discord response retries the exact API request
+  up to five times instead of immediately restarting the channel.
+- **Per-channel fault isolation** so a recoverable failure in one channel does not tear down an entire
+  multi-channel run.
+- **Cancellation controls, completion summaries, rate-limit status, count-backed progress, and ETA**.
 
-To learn more about the war and how you can help, [click here](https://tyrrrz.me/ukraine). Glory to Ukraine! 🇺🇦
+### Better archives
+
+- **SQLite (\.db) export format** with full-text search.
+- **Searchable Library** across previous SQLite exports.
+- **Offline conversion** from DiscordChatExporter JSON to HTML Dark, HTML Light, TXT, CSV, or SQLite
+  without contacting Discord again.
+- Conversion metadata preserves roles, display names, colors, channels, custom emoji, and other
+  formatting information where the source export contains it.
+- Streaming/atomic continuation merges, path/manifest hardening, CSV formula neutralization, and
+  asset-download deduplication.
+
+### User-token request compatibility
+
+For user-token requests, this fork combines:
+
+- **HttpCloak Chrome TLS/browser transport on Windows** adapted from DiscordChatExporterPlus.
+- A locally generated **official-web-style X-Super-Properties** profile based on upstream PR #1582.
+- Matching browser User-Agent, locale/timezone headers, session-scoped launch identifiers, and a
+  best-effort current Discord web build-number lookup.
+- No dependency on a third-party client-properties API.
+- Bot-token requests remain on the normal HttpClient path.
+
+These changes improve request consistency; they are not a guarantee against account restrictions. On Linux, this fork deliberately falls back to the normal managed HTTP transport because HttpCloak's in-process .NET native binding has a currently open host-crash issue under some workloads. On Windows, set `DISCORDCHATEXPORTER_DISABLE_BROWSER_TRANSPORT=1` to force the managed HTTP path for troubleshooting or compatibility.
+
+### Optional resilient PowerShell wrapper
+
+`scripts/Export-Guild-Resilient.ps1` wraps the native `exportguild --resume` workflow. It preserves the
+CLI's normal in-place progress display, uses `manifest.json` checkpoints to skip verified completed
+channels, automatically retries unfinished channels, and avoids the old per-channel `/channels/{id}`
+resolution problem.
+
+## Formats
+
+- HTML Dark
+- HTML Light
+- Plain Text (TXT)
+- CSV
+- JSON
+- SQLite (DB)
 
 ## Download
 
-- **Graphical user interface** (desktop app):
-  - 🟢 **[Stable release](https://github.com/Tyrrrz/DiscordChatExporter/releases/latest)**: look for `DiscordChatExporter.*.zip`
-  - 🟠 [CI build](https://github.com/Tyrrrz/DiscordChatExporter/actions/workflows/main.yml): look for `DiscordChatExporter.*.zip`
-  - 📦 [Scoop](https://scoop.sh/#/apps?q=DiscordChatExporter&p=1&id=c71b7367623c560a2dc746b9739b9568b79b59ae): `scoop install extras/discordchatexporter` (community-maintained)
-  - 📦 [WinGet](https://winstall.app/apps/Tyrrrz.DiscordChatExporter.GUI): `winget install Tyrrrz.DiscordChatExporter.GUI` (community-maintained)
-  - 📦 [AUR](https://aur.archlinux.org/packages/discord-chat-exporter-gui): `yay -S discord-chat-exporter-gui` (community-maintained)
-  - 📦 [Nix](https://search.nixos.org/packages?show=discordchatexporter-desktop): `nix-shell -p discordchatexporter-desktop` (community-maintained)
-- **Command-line interface** (terminal app):
-  - 🟢 **[Stable release](https://github.com/Tyrrrz/DiscordChatExporter/releases/latest)**: look for `DiscordChatExporter.Cli.*.zip`
-  - 🟠 [CI build](https://github.com/Tyrrrz/DiscordChatExporter/actions/workflows/main.yml): look for `DiscordChatExporter.Cli.*.zip`
-  - 🐋 [Docker](https://hub.docker.com/r/tyrrrz/discordchatexporter): `docker pull tyrrrz/discordchatexporter`
-  - 📦 [WinGet](https://winstall.app/apps/Tyrrrz.DiscordChatExporter.CLI): `winget install Tyrrrz.DiscordChatExporter.CLI` (community-maintained)
-  - 📦 [AUR](https://aur.archlinux.org/packages/discord-chat-exporter-cli): `yay -S discord-chat-exporter-cli` (community-maintained)
-  - 📦 [Nix](https://search.nixos.org/packages?show=discordchatexporter-cli): `nix-shell -p discordchatexporter-cli` (community-maintained)
+Builds and releases for this fork are published under:
 
-> [!IMPORTANT]
-> To launch the GUI version of the app on MacOS, you may need to first remove the downloaded file from quarantine.
-> You can do that by running the following command in the terminal: `xattr -rd com.apple.quarantine DiscordChatExporter.app`.
+**https://github.com/wefalltomorrow/DiscordChatExporter/releases**
 
-> [!NOTE]
-> Community-maintained packages are published independently from this repository and may not always be up to date with the latest release.
+Community package-manager packages that use the `Tyrrrz` package IDs still track upstream, not this fork.
 
-> [!NOTE]
-> If you're unsure which build is right for your system, consult with [this page](https://useragent.cc) to determine your OS and CPU architecture.
+## Build from source
 
-## Features
+Requires the **.NET 10 SDK**.
 
-- Cross-platform graphical and command-line interfaces
-- Authentication via either a user or a bot token
-- Multiple output formats: HTML (dark/light), TXT, CSV, JSON
-- Support for markdown, attachments, embeds, emoji, and other rich media features
-- File partitioning, date ranges, message filtering, and other export options
-- Self-contained exports that can be viewed offline
+```bash
+git clone https://github.com/wefalltomorrow/DiscordChatExporter.git
+cd DiscordChatExporter
 
-## Screenshots
+# GUI
+dotnet run --project DiscordChatExporter.Gui -c Release
 
-![channel list](.assets/list.png)
-![rendered output](.assets/output.png)
+# CLI
+dotnet run --project DiscordChatExporter.Cli -c Release -- --help
 
-## See also
+# Self-contained Windows x64 GUI
+dotnet publish DiscordChatExporter.Gui -c Release -r win-x64 --self-contained -o ./publish
+```
 
-- [**Chat Analytics**](https://github.com/mlomb/chat-analytics) — solution for analyzing chat patterns of Discord users, using exports produced by **DiscordChatExporter**.
-- [**DiscordChatExporter-frontend**](https://github.com/slatinsky/DiscordChatExporter-frontend) — convenient viewer for exports produced by **DiscordChatExporter**.
+## Documentation
+
+See [the documentation](.docs/Readme.md) for GUI, CLI, filtering, scheduling, continuation, library,
+and conversion usage.
+
+## Credits
+
+The original application is **DiscordChatExporter** by
+[Oleksii Holub (Tyrrrz)](https://github.com/Tyrrrz/DiscordChatExporter) and its contributors.
+
+This fork also incorporates/adapts work from:
+
+- [arandomhooman/DiscordChatExporter](https://github.com/arandomhooman/DiscordChatExporter) —
+  continuation/resume, SQLite, library/search, conversion, resilient batch exporting, progress/ETA,
+  and extensive reliability/hardening work.
+- [nulldg/DiscordChatExporterPlus](https://github.com/nulldg/DiscordChatExporterPlus) — HttpCloak
+  browser/TLS transport work.
+- [Tyrrrz/DiscordChatExporter PR #1582](https://github.com/Tyrrrz/DiscordChatExporter/pull/1582) and
+  the earlier client-properties work it builds on.
+
+See [NOTICE](NOTICE) and [License.txt](License.txt).

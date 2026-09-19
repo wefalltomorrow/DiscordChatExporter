@@ -4,6 +4,8 @@ using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using CliFx;
 using CliFx.Binding;
@@ -16,6 +18,7 @@ using DiscordChatExporter.Core.Discord.Data;
 using DiscordChatExporter.Core.Exceptions;
 using DiscordChatExporter.Core.Exporting;
 using DiscordChatExporter.Core.Exporting.Filtering;
+using DiscordChatExporter.Core.Exporting.Manifest;
 using DiscordChatExporter.Core.Exporting.Partitioning;
 using Gress;
 using Spectre.Console;
@@ -24,6 +27,12 @@ namespace DiscordChatExporter.Cli.Commands.Base;
 
 public abstract class ExportCommandBase : DiscordCommandBase
 {
+    private sealed class CliExportProgress(IProgress<Percentage> progress)
+        : IProgress<ExportProgress>
+    {
+        public void Report(ExportProgress value) => progress.Report(value.Fraction);
+    }
+
     [CommandOption(
         "output",
         'o',
@@ -121,6 +130,20 @@ public abstract class ExportCommandBase : DiscordCommandBase
     }
 
     [CommandOption(
+        "resume",
+        Description = "Resume a previous multi-channel export by verifying manifest.json and skipping channels whose output is already complete. "
+            + "Successful channels are checkpointed to the manifest as they finish."
+    )]
+    public bool ShouldResume { get; set; }
+
+    [CommandOption(
+        "checkpoint",
+        Description = "Write or update manifest.json after each completed channel without skipping existing exports. "
+            + "Use --resume on a later run to continue from those checkpoints."
+    )]
+    public bool ShouldCheckpoint { get; set; }
+
+    [CommandOption(
         "dateformat",
         Description = "This option doesn't do anything. Kept for backwards compatibility."
     )]
@@ -148,6 +171,49 @@ public abstract class ExportCommandBase : DiscordCommandBase
     [field: AllowNull, MaybeNull]
     protected ChannelExporter Exporter => field ??= new ChannelExporter(Discord);
 
+    private bool IsManifestCheckpointingEnabled => ShouldResume || ShouldCheckpoint;
+
+    private static ManifestChannelInfo BuildManifestInfo(ExportRequest request) =>
+        new(
+            request.Guild.Id.ToString(),
+            request.Guild.Name,
+            request.Channel.Id.ToString(),
+            request.Channel.Name,
+            request.Channel.Parent?.Name,
+            request.Format.ToString()
+        );
+
+    private static async ValueTask<string?> TryCheckpointManifestAsync(
+        ExportRequest request,
+        ExportResult result,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            var entries = ManifestBuilder.Build(
+                BuildManifestInfo(request),
+                result,
+                DateTimeOffset.Now,
+                cancellationToken
+            );
+
+            await ManifestWriter.WriteAsync(
+                request.OutputDirPath,
+                entries,
+                DateTimeOffset.Now,
+                cancellationToken
+            );
+
+            return null;
+        }
+        catch (Exception ex)
+            when (ex is IOException or UnauthorizedAccessException or JsonException)
+        {
+            return ex.Message;
+        }
+    }
+
     protected async ValueTask ExportAsync(IConsole console, IReadOnlyList<Channel> channels)
     {
         var cancellationToken = console.RegisterCancellationHandler();
@@ -165,29 +231,18 @@ public abstract class ExportCommandBase : DiscordCommandBase
             throw new CommandException("Option --media-dir cannot be used without --media.");
         }
 
-        // Make sure the user does not try to export multiple channels into one file.
-        // Output path must either be a directory or contain template tokens for this to work.
-        // Validate this up-front, before fetching threads, because thread fetching can take a
-        // long time and it's frustrating to fail only after it completes.
-        // https://github.com/Tyrrrz/DiscordChatExporter/issues/799
-        // https://github.com/Tyrrrz/DiscordChatExporter/issues/917
-        // https://github.com/Tyrrrz/DiscordChatExporter/issues/1549
+        // Validate multi-channel output paths before fetching threads. Thread discovery can take
+        // a long time, so fail early rather than after all of that work has completed.
         var mayExportMultipleChannels =
-            // Multiple channels were provided explicitly
-            channels.Count > 1
-            // Thread inclusion can add more channels to the export
-            || ThreadInclusionMode != ThreadInclusionMode.None;
+            channels.Count > 1 || ThreadInclusionMode != ThreadInclusionMode.None;
 
-        var isValidOutputPath =
-            // Anything is valid when exporting a single channel
+        var isEarlyOutputPathValid =
             !mayExportMultipleChannels
-            // When using template tokens, assume the user knows what they're doing
             || OutputPath.Contains('%')
-            // Otherwise, require an existing directory or an unambiguous directory path
             || Directory.Exists(OutputPath)
             || Path.EndsInDirectorySeparator(OutputPath);
 
-        if (!isValidOutputPath)
+        if (!isEarlyOutputPathValid)
         {
             throw new CommandException(
                 "Attempted to export multiple channels, but the output path is neither a directory nor a template. "
@@ -236,11 +291,134 @@ public abstract class ExportCommandBase : DiscordCommandBase
             await console.Output.WriteLineAsync($"Fetched {fetchedThreadsCount} thread(s).");
         }
 
-        // Export
+        if (unwrappedChannels.Count <= 0)
+            throw new CommandException("No channels matched the provided export options.");
+
         var errorsByChannel = new ConcurrentDictionary<Channel, string>();
         var warningsByChannel = new ConcurrentDictionary<Channel, string>();
+        var manifestWarningsByChannel = new ConcurrentDictionary<Channel, string>();
+        var guildsById = new Dictionary<Snowflake, Guild>();
+        var exportJobs = new List<ExportJob>();
 
-        await console.Output.WriteLineAsync($"Exporting {unwrappedChannels.Count} channel(s)...");
+        foreach (var channel in unwrappedChannels)
+        {
+            try
+            {
+                var guild = guildsById.GetValueOrDefault(channel.GuildId);
+                if (guild is null)
+                {
+                    guild = await Discord.GetGuildAsync(channel.GuildId, cancellationToken);
+                    guildsById[channel.GuildId] = guild;
+                }
+
+                exportJobs.Add(
+                    new ExportJob(
+                        channel,
+                        new ExportRequest(
+                            guild,
+                            channel,
+                            OutputPath,
+                            AssetsDirPath,
+                            ExportFormat,
+                            After,
+                            Before,
+                            PartitionLimit,
+                            MessageFilter,
+                            IsReverseMessageOrder,
+                            ShouldFormatMarkdown,
+                            ShouldDownloadAssets,
+                            ShouldReuseAssets,
+                            Locale,
+                            IsUtcNormalizationEnabled
+                        )
+                    )
+                );
+            }
+            catch (DiscordChatExporterException ex) when (!ex.IsFatal)
+            {
+                errorsByChannel[channel] = ex.Message;
+            }
+        }
+
+        var duplicateOutputPaths = ExportOutputPathValidator.GetDuplicateOutputFilePaths(
+            exportJobs.Select(j => j.Request)
+        );
+        if (duplicateOutputPaths.Count > 0)
+        {
+            throw new CommandException(
+                "Multiple channels would be exported to the same output file. "
+                    + "Use a directory path or include a unique template token such as %c. "
+                    + "Conflicting output path(s): "
+                    + string.Join(", ", duplicateOutputPaths)
+            );
+        }
+
+        var skippedCompletedCount = 0;
+
+        if (ShouldResume && exportJobs.Count > 0)
+        {
+            var manifestsByDir = new Dictionary<string, ExportManifest?>(
+                StringComparer.OrdinalIgnoreCase
+            );
+            var pendingJobs = new List<ExportJob>(exportJobs.Count);
+
+            foreach (var job in exportJobs)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var dirPath = job.Request.OutputDirPath;
+                if (!manifestsByDir.TryGetValue(dirPath, out var manifest))
+                {
+                    manifest = await ManifestReader.TryReadAsync(
+                        Path.Combine(dirPath, ExportManifest.FileName),
+                        cancellationToken
+                    );
+                    manifestsByDir[dirPath] = manifest;
+                }
+
+                if (
+                    ManifestResume.IsAlreadyExported(
+                        manifest,
+                        dirPath,
+                        job.Request,
+                        cancellationToken
+                    )
+                )
+                {
+                    skippedCompletedCount++;
+                }
+                else
+                {
+                    pendingJobs.Add(job);
+                }
+            }
+
+            exportJobs = pendingJobs;
+
+            if (skippedCompletedCount > 0)
+            {
+                await console.Output.WriteLineAsync(
+                    $"Skipping {skippedCompletedCount} already-completed channel(s)."
+                );
+            }
+        }
+
+        if (exportJobs.Count <= 0)
+        {
+            if (skippedCompletedCount > 0 && errorsByChannel.IsEmpty)
+            {
+                await console.Output.WriteLineAsync(
+                    "All selected channels are already complete and verified by manifest.json."
+                );
+                return;
+            }
+
+            if (errorsByChannel.Count >= unwrappedChannels.Count)
+                throw new CommandException("Export failed.");
+        }
+
+        // Export
+        await console.Output.WriteLineAsync($"Exporting {exportJobs.Count} channel(s)...");
         await console
             .CreateProgressTicker()
             .HideCompleted(
@@ -252,69 +430,103 @@ public abstract class ExportCommandBase : DiscordCommandBase
             .StartAsync(async ctx =>
             {
                 await Parallel.ForEachAsync(
-                    unwrappedChannels,
+                    exportJobs,
                     new ParallelOptions
                     {
                         MaxDegreeOfParallelism = Math.Max(1, ParallelLimit),
                         CancellationToken = cancellationToken,
                     },
-                    async (channel, innerCancellationToken) =>
+                    async (job, innerCancellationToken) =>
                     {
+                        var channel = job.Channel;
                         try
                         {
                             await ctx.StartTaskAsync(
                                 Markup.Escape(channel.GetHierarchicalName()),
                                 async progress =>
                                 {
-                                    var guild = await Discord.GetGuildAsync(
-                                        channel.GuildId,
+                                    var percentageProgress = progress.ToPercentageBased();
+                                    var result = await Exporter.ExportChannelAsync(
+                                        job.Request,
+                                        new CliExportProgress(percentageProgress),
                                         innerCancellationToken
                                     );
 
-                                    var request = new ExportRequest(
-                                        guild,
-                                        channel,
-                                        OutputPath,
-                                        AssetsDirPath,
-                                        ExportFormat,
-                                        After,
-                                        Before,
-                                        PartitionLimit,
-                                        MessageFilter,
-                                        IsReverseMessageOrder,
-                                        ShouldFormatMarkdown,
-                                        ShouldDownloadAssets,
-                                        ShouldReuseAssets,
-                                        Locale,
-                                        IsUtcNormalizationEnabled
-                                    );
+                                    if (IsManifestCheckpointingEnabled)
+                                    {
+                                        var manifestWarning = await TryCheckpointManifestAsync(
+                                            job.Request,
+                                            result,
+                                            innerCancellationToken
+                                        );
 
-                                    await Exporter.ExportChannelAsync(
-                                        request,
-                                        progress.ToPercentageBased(),
-                                        innerCancellationToken
-                                    );
+                                        if (!string.IsNullOrWhiteSpace(manifestWarning))
+                                            manifestWarningsByChannel[channel] = manifestWarning;
+                                    }
                                 }
                             );
                         }
                         catch (ChannelEmptyException ex)
                         {
                             warningsByChannel[channel] = ex.Message;
+
+                            if (IsManifestCheckpointingEnabled)
+                            {
+                                var manifestWarning = await TryCheckpointManifestAsync(
+                                    job.Request,
+                                    new ExportResult(
+                                        [
+                                            new ExportedFile(
+                                                job.Request.OutputFilePath,
+                                                0,
+                                                null,
+                                                null,
+                                                null,
+                                                null
+                                            ),
+                                        ],
+                                        0,
+                                        0
+                                    ),
+                                    innerCancellationToken
+                                );
+
+                                if (!string.IsNullOrWhiteSpace(manifestWarning))
+                                    manifestWarningsByChannel[channel] = manifestWarning;
+                            }
                         }
                         catch (DiscordChatExporterException ex) when (!ex.IsFatal)
                         {
+                            errorsByChannel[channel] = ex.Message;
+                        }
+                        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                        {
+                            // Output failures such as a locked file or full disk should fail only
+                            // this channel, not tear down an otherwise resumable batch.
                             errorsByChannel[channel] = ex.Message;
                         }
                     }
                 );
             });
 
-        // Print the result
+        // Print the result. Some errors may have happened while building requests for
+        // channels that never became export jobs, so count attempted failures separately.
+        var attemptedChannels = exportJobs.Select(job => job.Channel).ToHashSet();
+        var attemptedErrorCount = errorsByChannel.Keys.Count(attemptedChannels.Contains);
+        var successfulThisRunCount = exportJobs.Count - attemptedErrorCount;
+
         using (console.WithForegroundColor(ConsoleColor.White))
         {
             await console.Output.WriteLineAsync(
-                $"Successfully exported {unwrappedChannels.Count - errorsByChannel.Count} channel(s)."
+                $"Successfully exported {Math.Max(0, successfulThisRunCount)} channel(s)."
             );
+
+            if (skippedCompletedCount > 0)
+            {
+                await console.Output.WriteLineAsync(
+                    $"Resumed past {skippedCompletedCount} previously completed channel(s)."
+                );
+            }
         }
 
         // Print warnings
@@ -330,6 +542,27 @@ public abstract class ExportCommandBase : DiscordCommandBase
             }
 
             foreach (var (channel, message) in warningsByChannel)
+            {
+                await console.Error.WriteAsync($"{channel.GetHierarchicalName()}: ");
+                using (console.WithForegroundColor(ConsoleColor.Yellow))
+                    await console.Error.WriteLineAsync(message);
+            }
+
+            await console.Error.WriteLineAsync();
+        }
+
+        if (manifestWarningsByChannel.Any())
+        {
+            await console.Output.WriteLineAsync();
+
+            using (console.WithForegroundColor(ConsoleColor.Yellow))
+            {
+                await console.Error.WriteLineAsync(
+                    "Manifest checkpoint warnings were reported for the following channel(s):"
+                );
+            }
+
+            foreach (var (channel, message) in manifestWarningsByChannel)
             {
                 await console.Error.WriteAsync($"{channel.GetHierarchicalName()}: ");
                 using (console.WithForegroundColor(ConsoleColor.Yellow))
@@ -361,9 +594,11 @@ public abstract class ExportCommandBase : DiscordCommandBase
 
         // Fail the command only if ALL channels failed to export.
         // If only some channels failed to export, it's okay.
-        if (errorsByChannel.Count >= unwrappedChannels.Count)
+        if (exportJobs.Count > 0 && attemptedErrorCount >= exportJobs.Count)
             throw new CommandException("Export failed.");
     }
+
+    private sealed record ExportJob(Channel Channel, ExportRequest Request);
 
     public override async ValueTask ExecuteAsync(IConsole console)
     {

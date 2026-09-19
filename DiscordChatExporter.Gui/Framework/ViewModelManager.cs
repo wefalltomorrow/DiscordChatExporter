@@ -16,12 +16,18 @@ public class ViewModelManager(IServiceProvider services, LocalizationManager loc
     public DashboardViewModel GetDashboardViewModel() =>
         services.GetRequiredService<DashboardViewModel>();
 
+    public LibraryViewModel GetLibraryViewModel() =>
+        services.GetRequiredService<LibraryViewModel>();
+
+    public ConversionViewModel GetConversionViewModel() =>
+        services.GetRequiredService<ConversionViewModel>();
+
     public ExportSetupViewModel GetExportSetupViewModel(
         Guild guild,
         IReadOnlyList<Channel> channels
     )
     {
-        var viewModel = services.GetRequiredService<ExportSetupViewModel>();
+        var viewModel = ActivatorUtilities.CreateInstance<ExportSetupViewModel>(services);
 
         viewModel.Guild = guild;
         viewModel.Channels = channels;
@@ -36,7 +42,7 @@ public class ViewModelManager(IServiceProvider services, LocalizationManager loc
         string? cancelButtonText
     )
     {
-        var viewModel = services.GetRequiredService<MessageBoxViewModel>();
+        var viewModel = ActivatorUtilities.CreateInstance<MessageBoxViewModel>(services);
 
         viewModel.Title = title;
         viewModel.Message = message;
@@ -50,5 +56,5 @@ public class ViewModelManager(IServiceProvider services, LocalizationManager loc
         GetMessageBoxViewModel(title, message, localizationManager.CloseButton, null);
 
     public SettingsViewModel GetSettingsViewModel() =>
-        services.GetRequiredService<SettingsViewModel>();
+        ActivatorUtilities.CreateInstance<SettingsViewModel>(services);
 }

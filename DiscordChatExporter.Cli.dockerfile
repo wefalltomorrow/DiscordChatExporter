@@ -20,13 +20,15 @@ COPY DiscordChatExporter.Core DiscordChatExporter.Core
 COPY DiscordChatExporter.Cli DiscordChatExporter.Cli
 
 # Publish a self-contained assembly so we can use a slimmer runtime image
-RUN dotnet publish DiscordChatExporter.Cli \
+RUN DOTNET_ARCH=$TARGETARCH && \
+    if [ "$DOTNET_ARCH" = "amd64" ]; then DOTNET_ARCH=x64; fi && \
+    dotnet publish DiscordChatExporter.Cli \
     -p:Version=$VERSION \
     -p:CSharpier_Bypass=true \
     --configuration Release \
     --self-contained \
     --use-current-runtime \
-    --arch $TARGETARCH \
+    --arch $DOTNET_ARCH \
     --output DiscordChatExporter.Cli/bin/publish/
 
 # -- Run
@@ -35,8 +37,8 @@ FROM --platform=$TARGETPLATFORM mcr.microsoft.com/dotnet/runtime-deps:10.0-alpin
 
 LABEL org.opencontainers.image.title="DiscordChatExporter.Cli"
 LABEL org.opencontainers.image.description="DiscordChatExporter is an application that can be used to export message history from any Discord channel to a file."
-LABEL org.opencontainers.image.authors="tyrrrz.me"
-LABEL org.opencontainers.image.source="https://github.com/Tyrrrz/DiscordChatExporter"
+LABEL org.opencontainers.image.authors="Oleksii Holub; wefalltomorrow/DiscordChatExporter contributors"
+LABEL org.opencontainers.image.source="https://github.com/wefalltomorrow/DiscordChatExporter"
 LABEL org.opencontainers.image.licenses="MIT"
 
 # Alpine image doesn't come with the ICU libraries pre-installed, so we need to install them manually.
@@ -61,4 +63,5 @@ WORKDIR /out
 
 COPY --from=build /tmp/app/DiscordChatExporter.Cli/bin/publish /opt/app
 COPY docker-entrypoint.sh /opt/app
+RUN sed -i 's/\r$//' /opt/app/docker-entrypoint.sh && chmod +x /opt/app/docker-entrypoint.sh
 ENTRYPOINT ["/opt/app/docker-entrypoint.sh"]

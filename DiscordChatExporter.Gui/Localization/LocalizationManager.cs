@@ -44,12 +44,14 @@ public partial class LocalizationManager : ObservableObject, IDisposable
                     "deu" => GermanLocalization,
                     "fra" => FrenchLocalization,
                     "spa" => SpanishLocalization,
+                    "rus" => RussianLocalization,
                     _ => EnglishLocalization,
                 },
             Language.Ukrainian => UkrainianLocalization,
             Language.German => GermanLocalization,
             Language.French => FrenchLocalization,
             Language.Spanish => SpanishLocalization,
+            Language.Russian => RussianLocalization,
             _ => EnglishLocalization,
         };
 
@@ -72,8 +74,35 @@ public partial class LocalizationManager
 {
     // ---- Dashboard ----
 
+    public string MessagesReadFormat => Get();
+    public string MessageRateFormat => Get();
+    public string ExportedThroughFormat => Get();
+    public string ChannelProgressFormat => Get();
+    public string RateLimitPauseFormat => Get();
+    public string ExportCatalogWriteFailedMessage => Get();
+    public string ExportSummaryMessage => Get();
+    public string ExportSummaryFailedSuffix => Get();
+    public string ResumePromptTitle => Get();
+    public string ResumePromptMessage => Get();
+    public string ResumeSkipButton => Get();
+    public string ResumeExportAllButton => Get();
+    public string ResumeAllUpToDateMessage => Get();
+    public string ResumeSkippedMessage => Get();
+    public string RetryFailedTooltip => Get();
     public string PullGuildsTooltip => Get();
+    public string SelectAllChannelsButton => Get();
+    public string DeselectAllChannelsButton => Get();
+    public string ContinueExportTooltip => Get();
+    public string ContinueExportUpToDateMessage => Get();
+    public string ContinueExportSuccessMessage => Get();
+    public string ContinueExportReverseUnsupportedMessage => Get();
+    public string ContinueExportPartitionedUnsupportedMessage => Get();
+    public string ContinueExportFormatUnsupportedMessage => Get();
+    public string ContinueExportSkippedTail => Get();
+    public string ContinueExportFailedTail => Get();
     public string SettingsTooltip => Get();
+    public string LibraryTooltip => Get();
+    public string ConversionTooltip => Get();
     public string LastMessageSentTooltip => Get();
     public string TokenPlaceholderText => Get();
 
@@ -86,6 +115,30 @@ public partial class LocalizationManager
     public string TokenBotHeader => Get();
     public string TokenBotInstructions => Get();
     public string TokenHelpText => Get();
+
+    // ---- Library ----
+
+    public string LibraryTitle => Get();
+    public string LibraryBackButtonText => Get();
+    public string LibraryScanFolderButtonText => Get();
+    public string LibrarySearchPlaceholder => Get();
+    public string LibraryNoExportsMessage => Get();
+    public string LibrarySearchUnavailableMessage => Get();
+    public string LibraryEmptyResultsMessage => Get();
+
+    // ---- Conversion ----
+
+    public string ConversionTitle => Get();
+    public string ConversionBackButtonText => Get();
+    public string ConversionDescription => Get();
+    public string ConversionPickFilesButtonText => Get();
+    public string ConversionPickOutputFolderButtonText => Get();
+    public string ConversionConvertButtonText => Get();
+    public string ConversionSourcesHeader => Get();
+    public string ConversionNoSourcesMessage => Get();
+    public string ConversionOutputFolderHeader => Get();
+    public string ConversionTargetsHeader => Get();
+    public string ConversionResultsHeader => Get();
 
     // ---- Settings ----
 
@@ -116,6 +169,10 @@ public partial class LocalizationManager
     public string OutputPathTooltip => Get();
     public string FormatLabel => Get();
     public string FormatTooltip => Get();
+    public string CopyUserMessagesUserLabel => Get();
+    public string CopyUserMessagesUserTooltip => Get();
+    public string CopyUserMessagesButton => Get();
+    public string CopyUserMessagesButtonTooltip => Get();
     public string AfterDateLabel => Get();
     public string AfterDateTooltip => Get();
     public string BeforeDateLabel => Get();
@@ -162,4 +219,6 @@ public partial class LocalizationManager
     public string ErrorPullingChannelsTitle => Get();
     public string ErrorExportingTitle => Get();
     public string SuccessfulExportMessage => Get();
+    public string SuccessfulCopyUserMessagesMessage => Get();
+    public string NoCopyUserMessagesFoundMessage => Get();
 }

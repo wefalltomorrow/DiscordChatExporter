@@ -5,7 +5,8 @@ namespace DiscordChatExporter.Core.Markdown.Parsing;
 
 internal class RegexMatcher<TContext, TValue>(
     Regex regex,
-    Func<TContext, StringSegment, Match, TValue?> transform
+    Func<TContext, StringSegment, Match, TValue?> transform,
+    bool isLineAnchored = false
 ) : IMatcher<TContext, TValue>
 {
     public ParsedMatch<TValue>? TryMatch(TContext context, StringSegment segment)
@@ -14,12 +15,7 @@ internal class RegexMatcher<TContext, TValue>(
         if (!match.Success)
             return null;
 
-        // Overload regex.Match(string, int, int) doesn't take the whole string into account,
-        // it effectively functions as a match check on a substring.
-        // Which is super weird because regex.Match(string, int) takes the whole input in context.
-        // So in order to properly account for ^/$ regex tokens, we need to make sure that
-        // the expression also matches on the bigger part of the input.
-        if (!regex.IsMatch(segment.Source[..segment.EndIndex], segment.StartIndex))
+        if (isLineAnchored && match.Index > 0 && segment.Source[match.Index - 1] is not '\n')
             return null;
 
         var segmentMatch = segment.Relocate(match);

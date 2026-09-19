@@ -9,14 +9,14 @@ public class SnackbarManager
 {
     private readonly TimeSpan _defaultDuration = TimeSpan.FromSeconds(5);
 
-    public void Notify(string message, TimeSpan? duration = null) =>
+    public virtual void Notify(string message, TimeSpan? duration = null) =>
         SnackbarHost.Post(
             new SnackbarModel(message, duration ?? _defaultDuration),
             null,
             DispatcherPriority.Normal
         );
 
-    public void Notify(
+    public virtual void Notify(
         string message,
         string actionText,
         Action actionHandler,

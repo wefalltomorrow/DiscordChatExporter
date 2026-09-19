@@ -18,7 +18,7 @@
       DockPanel.Dock="Top"
       Orientation="Vertical"
     >
-      <Grid Margin="12,12,8,12" ColumnDefinitions="*,Auto">
+      <Grid Margin="12,12,8,12" ColumnDefinitions="*,Auto,Auto,Auto,Auto">
         <materialStyles:Card Grid.Column="0">
           <!--  Token  -->
           <TextBox
@@ -56,9 +56,37 @@
           </TextBox>
         </materialStyles:Card>
 
-        <!--  Settings button  -->
+        <!--  Library button  -->
         <Button
           Grid.Column="1"
+          Margin="8,0,0,0"
+          Padding="8"
+          VerticalAlignment="Center"
+          Command="{Binding NavigateToLibraryCommand}"
+          Foreground="{DynamicResource MaterialDarkForegroundBrush}"
+          Theme="{DynamicResource MaterialFlatButton}"
+          ToolTip.Tip="{Binding LocalizationManager.LibraryTooltip}"
+        >
+          <materialIcons:MaterialIcon Width="24" Height="24" Kind="LibraryOutline" />
+        </Button>
+
+        <!--  Conversion button  -->
+        <Button
+          Grid.Column="2"
+          Margin="8,0,0,0"
+          Padding="8"
+          VerticalAlignment="Center"
+          Command="{Binding NavigateToConversionCommand}"
+          Foreground="{DynamicResource MaterialDarkForegroundBrush}"
+          Theme="{DynamicResource MaterialFlatButton}"
+          ToolTip.Tip="{Binding LocalizationManager.ConversionTooltip}"
+        >
+          <materialIcons:MaterialIcon Width="24" Height="24" Kind="SwapHorizontal" />
+        </Button>
+
+        <!--  Settings button  -->
+        <Button
+          Grid.Column="3"
           Margin="8,0,0,0"
           Padding="8"
           VerticalAlignment="Center"
@@ -69,6 +97,21 @@
         >
           <materialIcons:MaterialIcon Width="24" Height="24" Kind="Settings" />
         </Button>
+
+        <!--  Cancel button  -->
+        <Button
+          Grid.Column="4"
+          Margin="8,0,0,0"
+          Padding="8"
+          VerticalAlignment="Center"
+          Command="{Binding CancelOperationCommand}"
+          Foreground="{DynamicResource MaterialValidationErrorBrush}"
+          IsVisible="{Binding CanCancelOperation}"
+          Theme="{DynamicResource MaterialFlatButton}"
+          ToolTip.Tip="{Binding LocalizationManager.CancelButton}"
+        >
+          <materialIcons:MaterialIcon Width="24" Height="24" Kind="StopCircleOutline" />
+        </Button>
       </Grid>
 
       <!--  Progress  -->
@@ -76,8 +119,42 @@
         Height="2"
         Background="Transparent"
         IsIndeterminate="{Binding IsProgressIndeterminate}"
-        Value="{Binding Progress.Current.Fraction, Mode=OneWay}"
+        Maximum="1"
+        Value="{Binding DisplayedProgressFraction, Mode=OneWay}"
       />
+      <StackPanel
+        Margin="12,0,12,4"
+        HorizontalAlignment="Right"
+        IsVisible="{Binding HasProgressDisplay}"
+        Orientation="Horizontal"
+        Spacing="8"
+      >
+        <TextBlock
+          FontSize="11"
+          Foreground="{DynamicResource MaterialValidationErrorBrush}"
+          Text="{Binding RateLimitPauseText}"
+        />
+        <TextBlock
+          FontSize="11"
+          Foreground="{DynamicResource MaterialDarkForegroundBrush}"
+          Text="{Binding ChannelProgressText}"
+        />
+        <TextBlock
+          FontSize="11"
+          Foreground="{DynamicResource MaterialDarkForegroundBrush}"
+          Text="{Binding MessagesReadText}"
+        />
+        <TextBlock
+          FontSize="11"
+          Foreground="{DynamicResource MaterialDarkForegroundBrush}"
+          Text="{Binding RateText}"
+        />
+        <TextBlock
+          FontSize="11"
+          Foreground="{DynamicResource MaterialDarkForegroundBrush}"
+          Text="{Binding ExportedThroughText}"
+        />
+      </StackPanel>
     </StackPanel>
 
     <!--  Body  -->
@@ -142,87 +219,106 @@
 
         <!--  Channels  -->
         <Border Grid.Column="1">
-          <TreeView
-            x:Name="AvailableChannelsTreeView"
-            ItemsSource="{Binding AvailableChannels}"
-            SelectedItems="{Binding SelectedChannels}"
-            SelectionChanged="AvailableChannelsTreeView_OnSelectionChanged"
-            SelectionMode="Multiple"
-            TextSearch.Text="Name"
-          >
-            <TreeView.Styles>
-              <Style Selector="TreeView">
-                <Style Selector="^ TreeViewItem">
-                  <Setter Property="Padding" Value="0" />
-                  <Setter Property="Cursor" Value="Hand" />
+          <DockPanel>
+            <!--  Select all / Deselect all toggle  -->
+            <Border
+              DockPanel.Dock="Top"
+              BorderBrush="{DynamicResource MaterialDividerBrush}"
+              BorderThickness="0,0,0,1"
+            >
+              <Button
+                Margin="8,4"
+                Padding="8,4"
+                HorizontalAlignment="Left"
+                Command="{Binding SelectAllChannelsCommand}"
+                Content="{Binding SelectAllChannelsButtonText}"
+                FontSize="13"
+                Theme="{DynamicResource MaterialFlatButton}"
+                ToolTip.Tip="{Binding LocalizationManager.SelectAllChannelsButton}"
+              />
+            </Border>
+            <TreeView
+              x:Name="AvailableChannelsTreeView"
+              ItemsSource="{Binding AvailableChannels}"
+              SelectedItems="{Binding SelectedChannels}"
+              SelectionChanged="AvailableChannelsTreeView_OnSelectionChanged"
+              SelectionMode="Multiple"
+              TextSearch.Text="Name"
+            >
+              <TreeView.Styles>
+                <Style Selector="TreeView">
+                  <Style Selector="^ TreeViewItem">
+                    <Setter Property="Padding" Value="0" />
+                    <Setter Property="Cursor" Value="Hand" />
+                  </Style>
                 </Style>
-              </Style>
-            </TreeView.Styles>
-            <TreeView.ItemTemplate>
-              <TreeDataTemplate ItemsSource="{Binding Children}">
-                <Grid
-                  Background="Transparent"
-                  Classes.category="{Binding Channel.IsCategory}"
-                  ColumnDefinitions="Auto,*,Auto"
-                  DoubleTapped="ChannelGrid_OnDoubleTapped"
-                >
-                  <Grid.Styles>
-                    <Style Selector="Grid">
-                      <Style Selector="^:not(.category)">
-                        <Setter Property="ToolTip.Tip">
-                          <Template>
-                            <TextBlock>
-                              <Run Text="{Binding #UserControl.DataContext.LocalizationManager.LastMessageSentTooltip}" />
-                              <Run
-                                FontWeight="SemiBold"
-                                Text="{Binding Channel.LastMessageId, Converter={x:Static converters:SnowflakeToTimestampStringConverter.Instance}, TargetNullValue=never, Mode=OneWay}"
-                              />
-                            </TextBlock>
-                          </Template>
-                        </Setter>
-                      </Style>
-                    </Style>
-                  </Grid.Styles>
-
-                  <!--  Channel icon  -->
-                  <materialIcons:MaterialIcon
-                    Grid.Column="0"
-                    Margin="0,0,4,0"
-                    Classes.voice="{Binding Channel.IsVoice}"
-                    IsVisible="{Binding !Channel.IsCategory}"
+              </TreeView.Styles>
+              <TreeView.ItemTemplate>
+                <TreeDataTemplate ItemsSource="{Binding Children}">
+                  <Grid
+                    Background="Transparent"
+                    Classes.category="{Binding Channel.IsCategory}"
+                    ColumnDefinitions="Auto,*,Auto"
+                    DoubleTapped="ChannelGrid_OnDoubleTapped"
                   >
-                    <materialIcons:MaterialIcon.Styles>
-                      <Style Selector="materialIcons|MaterialIcon">
-                        <Setter Property="Kind" Value="Pound" />
-
-                        <Style Selector="^.voice">
-                          <Setter Property="Kind" Value="VolumeHigh" />
+                    <Grid.Styles>
+                      <Style Selector="Grid">
+                        <Style Selector="^:not(.category)">
+                          <Setter Property="ToolTip.Tip">
+                            <Template>
+                              <TextBlock>
+                                <Run Text="{Binding #UserControl.DataContext.LocalizationManager.LastMessageSentTooltip}" />
+                                <Run
+                                  FontWeight="SemiBold"
+                                  Text="{Binding Channel.LastMessageId, Converter={x:Static converters:SnowflakeToTimestampStringConverter.Instance}, TargetNullValue=never, Mode=OneWay}"
+                                />
+                              </TextBlock>
+                            </Template>
+                          </Setter>
                         </Style>
                       </Style>
-                    </materialIcons:MaterialIcon.Styles>
-                  </materialIcons:MaterialIcon>
+                    </Grid.Styles>
 
-                  <!--  Channel name  -->
-                  <TextBlock
-                    Grid.Column="1"
-                    Margin="0,12"
-                    FontSize="14"
-                    Text="{Binding Channel.Name, Mode=OneWay}"
-                  />
+                    <!--  Channel icon  -->
+                    <materialIcons:MaterialIcon
+                      Grid.Column="0"
+                      Margin="0,0,4,0"
+                      Classes.voice="{Binding Channel.IsVoice}"
+                      IsVisible="{Binding !Channel.IsCategory}"
+                    >
+                      <materialIcons:MaterialIcon.Styles>
+                        <Style Selector="materialIcons|MaterialIcon">
+                          <Setter Property="Kind" Value="Pound" />
 
-                  <!--  Checkmark  -->
-                  <materialIcons:MaterialIcon
-                    Grid.Column="2"
-                    Width="24"
-                    Height="24"
-                    Margin="16,0"
-                    IsVisible="{Binding $parent[TreeViewItem].IsSelected}"
-                    Kind="Check"
-                  />
-                </Grid>
-              </TreeDataTemplate>
-            </TreeView.ItemTemplate>
-          </TreeView>
+                          <Style Selector="^.voice">
+                            <Setter Property="Kind" Value="VolumeHigh" />
+                          </Style>
+                        </Style>
+                      </materialIcons:MaterialIcon.Styles>
+                    </materialIcons:MaterialIcon>
+
+                    <!--  Channel name  -->
+                    <TextBlock
+                      Grid.Column="1"
+                      Margin="0,12"
+                      FontSize="14"
+                      Text="{Binding Channel.Name, Mode=OneWay}"
+                    />
+
+                    <!--  Checkmark  -->
+                    <materialIcons:MaterialIcon
+                      Grid.Column="2"
+                      Width="24"
+                      Height="24"
+                      Margin="16,0"
+                      IsVisible="{Binding $parent[TreeViewItem].IsSelected}"
+                      Kind="Check"
+                    />
+                  </Grid>
+                </TreeDataTemplate>
+              </TreeView.ItemTemplate>
+            </TreeView>
+          </DockPanel>
         </Border>
       </Grid>
 
@@ -301,6 +397,42 @@
           </StackPanel>
         </ScrollViewer>
       </Panel>
+
+      <!--  Retry failed button  -->
+      <Button
+        Width="56"
+        Height="56"
+        Margin="32,24,176,24"
+        Padding="0"
+        HorizontalAlignment="Right"
+        VerticalAlignment="Bottom"
+        Background="{DynamicResource MaterialDarkBackgroundBrush}"
+        Command="{Binding RetryFailedExportCommand}"
+        Foreground="{DynamicResource MaterialDarkForegroundBrush}"
+        IsVisible="{Binding HasFailedExport}"
+        Theme="{DynamicResource MaterialIconButton}"
+        ToolTip.Tip="{Binding LocalizationManager.RetryFailedTooltip}"
+      >
+        <materialIcons:MaterialIcon Width="32" Height="32" Kind="Refresh" />
+      </Button>
+
+      <!--  Continue export button  -->
+      <Button
+        Width="56"
+        Height="56"
+        Margin="32,24,104,24"
+        Padding="0"
+        HorizontalAlignment="Right"
+        VerticalAlignment="Bottom"
+        Background="{DynamicResource MaterialDarkBackgroundBrush}"
+        Command="{Binding ContinueExportCommand}"
+        Foreground="{DynamicResource MaterialDarkForegroundBrush}"
+        IsVisible="{Binding $self.IsEffectivelyEnabled}"
+        Theme="{DynamicResource MaterialIconButton}"
+        ToolTip.Tip="{Binding LocalizationManager.ContinueExportTooltip}"
+      >
+        <materialIcons:MaterialIcon Width="32" Height="32" Kind="FileDocumentPlusOutline" />
+      </Button>
 
       <!--  Export button  -->
       <Button

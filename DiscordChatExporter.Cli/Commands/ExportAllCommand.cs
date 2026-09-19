@@ -114,7 +114,7 @@ public partial class ExportAllCommand : ExportCommandBase
 
                                 channels.Add(channel);
                             }
-                            catch (DiscordChatExporterException)
+                            catch (DiscordChatExporterException ex) when (!ex.IsFatal)
                             {
                                 inaccessibleChannels.Add(dumpChannel);
                             }
@@ -122,7 +122,7 @@ public partial class ExportAllCommand : ExportCommandBase
                     }
                 );
 
-            await console.Output.WriteLineAsync($"Fetched {channels} channel(s).");
+            await console.Output.WriteLineAsync($"Fetched {channels.Count} channel(s).");
 
             // Print inaccessible channels
             if (inaccessibleChannels.Any())

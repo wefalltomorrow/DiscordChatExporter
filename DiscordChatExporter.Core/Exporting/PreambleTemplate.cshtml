@@ -19,8 +19,10 @@
     string GetFontUrl(string style, int weight) =>
         $"https://cdn.jsdelivr.net/gh/Tyrrrz/DiscordFonts@master/ggsans-{style}-{weight}.woff2";
 
-    ValueTask<string> ResolveAssetUrlAsync(string url) =>
-        Context.ResolveAssetUrlAsync(url, CancellationToken);
+    async ValueTask<string> ResolveAssetUrlAsync(string url) =>
+        HtmlMarkdownVisitor.SanitizeHtmlAssetUrl(
+            await Context.ResolveAssetUrlAsync(url, CancellationToken)
+        );
 
     string FormatDate(DateTimeOffset instant, string format = "g") =>
         Context.FormatDate(instant, format);

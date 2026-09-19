@@ -6,6 +6,9 @@
   - [Using the GUI](Using-the-GUI.md)
   - [Using the CLI](Using-the-CLI.md)
   - [File formats](Getting-started.md#file-formats)
+  - [Continuing exports](Using-the-GUI.md#continue-exports)
+  - [Library and search](Using-the-GUI.md#library)
+  - [Converting JSON exports](Using-the-GUI.md#convert-json-exports)
 
 ## Guides
 

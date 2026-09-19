@@ -38,7 +38,13 @@ public static class ExportWrapper
         Directory.CreateDirectory(DirPath);
     }
 
-    private static async ValueTask<string> ExportAsync(Snowflake channelId, ExportFormat format)
+    private static async ValueTask<string> ExportAsync(Snowflake channelId, ExportFormat format) =>
+        await File.ReadAllTextAsync(await ExportToFileAsync(channelId, format));
+
+    private static async ValueTask<string> ExportToFileAsync(
+        Snowflake channelId,
+        ExportFormat format
+    )
     {
         var fileName = channelId.ToString() + '.' + format.GetFileExtension();
         var filePath = Path.Combine(DirPath, fileName);
@@ -60,8 +66,11 @@ public static class ExportWrapper
             }.ExecuteAsync(console);
         }
 
-        return await File.ReadAllTextAsync(filePath);
+        return filePath;
     }
+
+    public static async ValueTask<string> ExportAsDbAsync(Snowflake channelId) =>
+        await ExportToFileAsync(channelId, ExportFormat.Db);
 
     public static async ValueTask<IHtmlDocument> ExportAsHtmlAsync(Snowflake channelId) =>
         Html.Parse(await ExportAsync(channelId, ExportFormat.HtmlDark));

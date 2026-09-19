@@ -10,7 +10,7 @@ public record Interaction(Snowflake Id, string Name, User User)
     public static Interaction Parse(JsonElement json)
     {
         var id = json.GetProperty("id").GetNonWhiteSpaceString().Pipe(Snowflake.Parse);
-        var name = json.GetProperty("name").GetNonNullString(); // may be empty, but not null
+        var name = json.GetPropertyOrNull("name")?.GetStringOrNull() ?? "";
         var user = json.GetProperty("user").Pipe(User.Parse);
 
         return new Interaction(id, name, user);

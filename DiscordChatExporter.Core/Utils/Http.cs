@@ -4,7 +4,9 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
 using System.Security.Authentication;
+using System.Threading;
 using System.Threading.Tasks;
+using HttpCloak;
 using Polly;
 using Polly.Retry;
 using PowerKit.Extensions;
@@ -14,6 +16,13 @@ namespace DiscordChatExporter.Core.Utils;
 public static class Http
 {
     public static HttpClient Client { get; } = new();
+
+    internal static ResiliencePropertyKey<
+        Func<TimeSpan, CancellationToken, ValueTask>
+    > RateLimitDelayHandlerKey { get; } = new("DiscordRateLimitDelayHandler");
+
+    private static ResiliencePropertyKey<TimeSpan> RateLimitDelayKey { get; } =
+        new("DiscordRateLimitDelay");
 
     private static bool IsRetryableStatusCode(HttpStatusCode statusCode) =>
         statusCode is HttpStatusCode.TooManyRequests or HttpStatusCode.RequestTimeout
@@ -26,10 +35,32 @@ public static class Http
         exception
             .GetSelfAndDescendants()
             .Any(ex =>
-                ex is TimeoutException or SocketException or AuthenticationException
+                ex
+                    is TimeoutException
+                        or SocketException
+                        or AuthenticationException
+                        or HttpCloakException
                 || ex is HttpRequestException hrex
                     && IsRetryableStatusCode(hrex.StatusCode ?? HttpStatusCode.OK)
             );
+
+    private static bool IsRateLimitResponse(HttpResponseMessage? response) =>
+        response?.StatusCode == HttpStatusCode.TooManyRequests;
+
+    private static TimeSpan GetResponseRetryDelay(
+        RetryDelayGeneratorArguments<HttpResponseMessage> args
+    )
+    {
+        // If rate-limited, use retry-after header as the guide.
+        // The response can be null here if an exception was thrown.
+        if (args.Outcome.Result?.Headers.RetryAfter?.Delta is { } retryAfter)
+        {
+            // Add some buffer just in case
+            return retryAfter + TimeSpan.FromSeconds(1);
+        }
+
+        return TimeSpan.FromSeconds(Math.Pow(2, args.AttemptNumber) + 1);
+    }
 
     public static ResiliencePipeline ResiliencePipeline { get; } =
         new ResiliencePipelineBuilder()
@@ -55,19 +86,49 @@ public static class Http
                     MaxRetryAttempts = 8,
                     DelayGenerator = args =>
                     {
-                        // If rate-limited, use retry-after header as the guide.
-                        // The response can be null here if an exception was thrown.
-                        if (args.Outcome.Result?.Headers.RetryAfter?.Delta is { } retryAfter)
+                        var delay = GetResponseRetryDelay(args);
+
+                        if (
+                            IsRateLimitResponse(args.Outcome.Result)
+                            && args.Context.Properties.TryGetValue(RateLimitDelayHandlerKey, out _)
+                        )
                         {
-                            // Add some buffer just in case
-                            return ValueTask.FromResult<TimeSpan?>(
-                                retryAfter + TimeSpan.FromSeconds(1)
-                            );
+                            args.Context.Properties.Set(RateLimitDelayKey, delay);
+                            return ValueTask.FromResult<TimeSpan?>(TimeSpan.Zero);
                         }
 
-                        return ValueTask.FromResult<TimeSpan?>(
-                            TimeSpan.FromSeconds(Math.Pow(2, args.AttemptNumber) + 1)
-                        );
+                        return ValueTask.FromResult<TimeSpan?>(delay);
+                    },
+                    OnRetry = async args =>
+                    {
+                        var response = args.Outcome.Result;
+                        try
+                        {
+                            if (!IsRateLimitResponse(response))
+                                return;
+
+                            if (
+                                !args.Context.Properties.TryGetValue(
+                                    RateLimitDelayHandlerKey,
+                                    out var delayHandler
+                                )
+                            )
+                            {
+                                return;
+                            }
+
+                            var delay = args.Context.Properties.GetValue(
+                                RateLimitDelayKey,
+                                args.RetryDelay
+                            );
+
+                            response?.Dispose();
+                            await delayHandler(delay, args.Context.CancellationToken);
+                        }
+                        finally
+                        {
+                            response?.Dispose();
+                        }
                     },
                 }
             )

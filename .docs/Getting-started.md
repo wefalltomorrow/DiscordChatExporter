@@ -58,3 +58,9 @@ You can open `.json` files with a text editor, such as Notepad.
 
 The CSV format allows for easy parsing of the chat log. Depending on your needs, the JSON format might be better.
 You can open `.csv` files with a text editor, such as Notepad, or a spreadsheet app, like Microsoft Excel and Google Sheets.
+
+### SQLite
+
+The SQLite format stores the export in a self-contained `.db` database.
+It is useful for large archives, full-text search in the GUI Library, and workflows that need a queryable local database.
+You can open `.db` files with SQLite tools such as DB Browser for SQLite.

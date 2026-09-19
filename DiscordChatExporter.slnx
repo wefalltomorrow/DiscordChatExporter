@@ -5,6 +5,7 @@
     <File Path="DiscordChatExporter.Cli.dockerfile" />
     <File Path="global.json" />
     <File Path="License.txt" />
+    <File Path="NOTICE" />
     <File Path="NuGet.config" />
     <File Path="Readme.md" />
   </Folder>
@@ -13,4 +14,5 @@
   <Project Path="DiscordChatExporter.Cli/DiscordChatExporter.Cli.csproj" />
   <Project Path="DiscordChatExporter.Core/DiscordChatExporter.Core.csproj" />
   <Project Path="DiscordChatExporter.Gui/DiscordChatExporter.Gui.csproj" />
+  <Project Path="DiscordChatExporter.Gui.Tests/DiscordChatExporter.Gui.Tests.csproj" />
 </Solution>

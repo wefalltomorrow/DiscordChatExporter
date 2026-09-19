@@ -103,6 +103,30 @@
             </ComboBox.ItemTemplate>
           </ComboBox>
 
+          <!--  Copy user messages  -->
+          <Grid
+            Margin="16,8"
+            ColumnDefinitions="*,Auto"
+            ColumnSpacing="8"
+            IsVisible="{Binding IsSingleChannel}"
+          >
+            <TextBox
+              Grid.Column="0"
+              materialAssists:TextFieldAssist.Label="{Binding LocalizationManager.CopyUserMessagesUserLabel}"
+              Text="{Binding CopyUserMessagesUserValue}"
+              Theme="{DynamicResource FilledTextBox}"
+              ToolTip.Tip="{Binding LocalizationManager.CopyUserMessagesUserTooltip}"
+            />
+
+            <Button
+              Grid.Column="1"
+              Command="{Binding CopyUserMessagesCommand}"
+              Content="{Binding LocalizationManager.CopyUserMessagesButton}"
+              Theme="{DynamicResource MaterialOutlineButton}"
+              ToolTip.Tip="{Binding LocalizationManager.CopyUserMessagesButtonTooltip}"
+            />
+          </Grid>
+
           <!--  Advanced section  -->
           <StackPanel
             Margin="16,8"

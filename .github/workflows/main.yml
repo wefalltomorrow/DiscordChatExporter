@@ -11,6 +11,10 @@ on:
     branches:
       - prime
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   DOTNET_NOLOGO: true
@@ -51,14 +55,17 @@ jobs:
         run: echo "::error title=Bad formatting::Formatting issues detected. Please build the solution locally to fix them."
 
   test:
-    # Tests need access to secrets, so we can't run them against PRs because of limited trust
-    if: ${{ github.event_name != 'pull_request' }}
-
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     permissions:
       contents: read
+
+    # Fork CI stays useful without secrets: all deterministic/unit tests run on PRs,
+    # while live Discord tests and coverage upload are enabled only when configured.
+    env:
+      DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
     steps:
       - name: Checkout
@@ -67,11 +74,24 @@ jobs:
       - name: Install .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
 
-      - name: Run tests
-        env:
-          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+      - name: Run token-free CLI tests
         run: >
-          dotnet test
+          dotnet test DiscordChatExporter.Cli.Tests
+          -p:CSharpier_Bypass=true
+          --configuration Release
+          --filter "FullyQualifiedName~ClientPropertiesSpecs|FullyQualifiedName~JsonRetrySpecs|FullyQualifiedName~Conversion|FullyQualifiedName~Continuation|FullyQualifiedName~Manifest|FullyQualifiedName~EtaEstimatorSpecs|FullyQualifiedName~ExportProgressSpecs|FullyQualifiedName~ExportFormatSpecs|FullyQualifiedName~ExportSummarizerSpecs|FullyQualifiedName~ExportCatalogBuilderSpecs|FullyQualifiedName~ExportContextAssetSpecs|FullyQualifiedName~DiscordDataParsingSpecs|FullyQualifiedName~DiscordClientMessageRangeSpecs|FullyQualifiedName~RateLimitSpecs|FullyQualifiedName~CountMessagesParsingSpecs|FullyQualifiedName~MessageCountEstimatorSpecs|FullyQualifiedName~MessageFilterFactorySpecs|FullyQualifiedName~RecentExportDirsSpecs|FullyQualifiedName~SqliteMessageWriterSpecs|FullyQualifiedName~SqliteExportReaderSpecs"
+          --logger "GitHubActions;summary.includePassedTests=true;summary.includeSkippedTests=true"
+
+      - name: Run GUI tests
+        run: >
+          dotnet test DiscordChatExporter.Gui.Tests
+          -p:CSharpier_Bypass=true
+          --configuration Release
+
+      - name: Run live-token CLI tests
+        if: ${{ github.event_name != 'pull_request' && env.DISCORD_TOKEN != '' }}
+        run: >
+          dotnet test DiscordChatExporter.Cli.Tests
           -p:CSharpier_Bypass=true
           --configuration Release
           --logger "GitHubActions;summary.includePassedTests=true;summary.includeSkippedTests=true"
@@ -81,11 +101,15 @@ jobs:
           DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
 
       - name: Upload coverage
+        if: ${{ github.event_name != 'pull_request' && env.CODECOV_TOKEN != '' }}
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
 
   pack:
+    # During draft integration work, run fast build/tests only. The full cross-platform
+    # packaging matrix runs once the PR is marked ready, and on direct prime/tag builds.
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     strategy:
       matrix:
         app:
@@ -137,6 +161,23 @@ jobs:
         if: ${{ startsWith(matrix.rid, 'osx-') && matrix.app == 'DiscordChatExporter.Gui' }}
         run: >
           mv ${{ matrix.app }}/bin/publish/DCE.app ${{ matrix.app }}/bin/publish/${{ matrix.asset }}.app
+
+      - name: Prepare release payload
+        shell: pwsh
+        run: |
+          $publishDir = Join-Path '${{ matrix.app }}' 'bin/publish'
+
+          Get-ChildItem -LiteralPath $publishDir -Recurse -Filter '*.pdb' -File |
+            Remove-Item -Force
+
+          Copy-Item -LiteralPath 'License.txt' -Destination (Join-Path $publishDir 'License.txt') -Force
+          Copy-Item -LiteralPath 'NOTICE' -Destination (Join-Path $publishDir 'NOTICE') -Force
+
+          foreach ($requiredFile in @('License.txt', 'NOTICE')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $publishDir $requiredFile) -PathType Leaf)) {
+              throw "Missing required release file: $requiredFile"
+            }
+          }
 
       - name: Upload app binaries
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -238,8 +279,12 @@ jobs:
     permissions:
       contents: read
 
+    env:
+      DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+
     steps:
       - name: Notify Discord
+        if: ${{ env.DISCORD_WEBHOOK != '' }}
         uses: tyrrrz/action-http-request@110f1a0f0f7e91c3b2de349539249f4573c243fa # 1.1.5
         with:
           url: ${{ secrets.DISCORD_WEBHOOK }}

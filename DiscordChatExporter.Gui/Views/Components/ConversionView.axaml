@@ -1,0 +1,125 @@
+<UserControl
+  x:Class="DiscordChatExporter.Gui.Views.Components.ConversionView"
+  xmlns="https://github.com/avaloniaui"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:components="clr-namespace:DiscordChatExporter.Gui.ViewModels.Components"
+  xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+  xmlns:materialStyles="clr-namespace:Material.Styles.Controls;assembly=Material.Styles"
+  x:DataType="components:ConversionViewModel"
+>
+  <DockPanel>
+    <StackPanel
+      Background="{DynamicResource MaterialDarkBackgroundBrush}"
+      DockPanel.Dock="Top"
+      Orientation="Vertical"
+    >
+      <Grid Margin="12" ColumnDefinitions="Auto,*">
+        <Button
+          Grid.Column="0"
+          Margin="0,0,8,0"
+          Padding="8"
+          Command="{Binding NavigateBackCommand}"
+          Foreground="{DynamicResource MaterialDarkForegroundBrush}"
+          Theme="{DynamicResource MaterialFlatButton}"
+        >
+          <StackPanel Orientation="Horizontal" Spacing="4">
+            <materialIcons:MaterialIcon Width="20" Height="20" Kind="ArrowLeft" />
+            <TextBlock
+              VerticalAlignment="Center"
+              Text="{Binding LocalizationManager.ConversionBackButtonText}"
+            />
+          </StackPanel>
+        </Button>
+        <TextBlock
+          Grid.Column="1"
+          VerticalAlignment="Center"
+          FontSize="18"
+          FontWeight="SemiBold"
+          Foreground="{DynamicResource MaterialDarkForegroundBrush}"
+          Text="{Binding LocalizationManager.ConversionTitle}"
+        />
+      </Grid>
+      <ProgressBar Height="2" Background="Transparent" IsIndeterminate="{Binding IsBusy}" />
+    </StackPanel>
+
+    <ScrollViewer Background="{DynamicResource MaterialCardBackgroundBrush}">
+      <StackPanel Margin="16" Spacing="12">
+        <TextBlock Text="{Binding LocalizationManager.ConversionDescription}" TextWrapping="Wrap" />
+
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button
+            Command="{Binding PickFilesCommand}"
+            Content="{Binding LocalizationManager.ConversionPickFilesButtonText}"
+          />
+          <Button
+            Command="{Binding PickOutputFolderCommand}"
+            Content="{Binding LocalizationManager.ConversionPickOutputFolderButtonText}"
+          />
+          <Button
+            Command="{Binding ConvertCommand}"
+            Content="{Binding LocalizationManager.ConversionConvertButtonText}"
+          />
+          <Button
+            Command="{Binding CancelOperationCommand}"
+            Content="{Binding LocalizationManager.CancelButton}"
+            IsVisible="{Binding CanCancelOperation}"
+          />
+        </StackPanel>
+
+        <TextBlock
+          FontWeight="SemiBold"
+          Text="{Binding LocalizationManager.ConversionSourcesHeader}"
+        />
+        <TextBlock
+          IsVisible="{Binding !SourceFilePaths.Count}"
+          Text="{Binding LocalizationManager.ConversionNoSourcesMessage}"
+        />
+        <ListBox
+          MaxHeight="120"
+          IsEnabled="{Binding CanEditConversionState}"
+          ItemsSource="{Binding SourceFilePaths}"
+        />
+
+        <TextBlock
+          FontWeight="SemiBold"
+          Text="{Binding LocalizationManager.ConversionOutputFolderHeader}"
+        />
+        <TextBlock Text="{Binding OutputFolderPath}" TextWrapping="Wrap" />
+
+        <TextBlock
+          FontWeight="SemiBold"
+          Text="{Binding LocalizationManager.ConversionTargetsHeader}"
+        />
+        <WrapPanel IsEnabled="{Binding CanEditConversionState}">
+          <CheckBox Content="HTML Dark" IsChecked="{Binding IsHtmlDarkSelected}" />
+          <CheckBox Content="HTML Light" IsChecked="{Binding IsHtmlLightSelected}" />
+          <CheckBox Content="CSV" IsChecked="{Binding IsCsvSelected}" />
+          <CheckBox Content="TXT" IsChecked="{Binding IsTxtSelected}" />
+          <CheckBox Content="SQLite" IsChecked="{Binding IsSqliteSelected}" />
+        </WrapPanel>
+
+        <TextBlock
+          FontWeight="SemiBold"
+          Text="{Binding LocalizationManager.ConversionResultsHeader}"
+        />
+        <ListBox ItemsSource="{Binding Results}" SelectionMode="Single">
+          <ListBox.ItemTemplate>
+            <DataTemplate>
+              <materialStyles:Card Margin="4">
+                <StackPanel Spacing="2">
+                  <TextBlock FontWeight="SemiBold">
+                    <Run Text="{Binding FormatName}" />
+                    <Run Text=" · " />
+                    <Run Text="{Binding Message}" />
+                  </TextBlock>
+                  <TextBlock FontSize="12" Text="{Binding OutputFilePath}" TextWrapping="Wrap" />
+                  <TextBlock FontSize="12" Text="{Binding FidelityText}" />
+                </StackPanel>
+              </materialStyles:Card>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </StackPanel>
+    </ScrollViewer>
+  </DockPanel>
+</UserControl>

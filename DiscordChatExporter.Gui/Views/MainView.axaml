@@ -17,7 +17,7 @@
 >
   <dialogHostAvalonia:DialogHost x:Name="DialogHost" CloseOnClickAway="False">
     <materialStyles:SnackbarHost HostName="Root" SnackbarMaxCounts="3">
-      <ContentControl Content="{Binding Dashboard}" />
+      <ContentControl Content="{Binding CurrentPage}" />
     </materialStyles:SnackbarHost>
   </dialogHostAvalonia:DialogHost>
 </Window>

@@ -68,8 +68,8 @@ You can quickly export with DCE's default settings by using just `-t token` and 
 
 #### Changing the format
 
-You can change the export format to `HtmlDark`, `HtmlLight`, `PlainText` `Json` or `Csv` with `-f format`. The default
-format is `HtmlDark`.
+You can change the export format to `HtmlDark`, `HtmlLight`, `PlainText`, `Json`, `Csv`, or `Db` with `-f format`.
+The `Db` format writes a SQLite `.db` file. The default format is `HtmlDark`.
 
 ```console
 ./DiscordChatExporter.Cli export -t "mfa.Ifrn" -c 53555 -f Json
@@ -77,7 +77,7 @@ format is `HtmlDark`.
 
 #### Changing the output filename
 
-You can change the filename by using `-o name.ext`. e.g., for the `HTML` format:
+You can change the filename by using `-o name.ext`. e.g. for the `HTML` format:
 
 ```console
 ./DiscordChatExporter.Cli export -t "mfa.Ifrn" -c 53555 -o myserver.html
@@ -186,21 +186,21 @@ locales. The default locale is `en-US`.
 #### Date ranges
 
 **Messages sent before a date**
-Use `--before` to export messages sent before the provided date. e.g., messages sent before September 18th, 2019:
+Use `--before` to export messages sent before the provided date. E.g. messages sent before September 18th, 2019:
 
 ```console
 ./DiscordChatExporter.Cli export -t "mfa.Ifrn" -c 53555 --before 2019-09-18
 ```
 
 **Messages sent after a date**
-Use `--after` to export messages sent after the provided date. e.g., messages sent after September 17th, 2019 11:34 PM:
+Use `--after` to export messages sent after the provided date. E.g. messages sent after September 17th, 2019 11:34 PM:
 
 ```console
 ./DiscordChatExporter.Cli export -t "mfa.Ifrn" -c 53555 --after "2019-09-17 23:34"
 ```
 
 **Messages sent in a date range**
-Use `--before` and `--after` to export messages sent during the provided date range. e.g., messages sent between
+Use `--before` and `--after` to export messages sent during the provided date range. E.g. messages sent between
 September 17th, 2019 11:34 PM and September 18th:
 
 ```console
@@ -230,6 +230,31 @@ To export all channels in a specific server, use the `exportguild` command and p
 ```console
 ./DiscordChatExporter.Cli exportguild -t "mfa.Ifrn" -g 21814
 ```
+
+#### Resuming interrupted multi-channel exports
+
+For long whole-server or multi-channel exports, use `--resume` to enable per-channel checkpointing.
+Each completed channel is recorded in `manifest.json` together with its file size and SHA-256 hash.
+If the command is interrupted and run again with the same output settings, completed and verified
+channels are skipped while incomplete or failed channels are exported again.
+
+```console
+./DiscordChatExporter.Cli exportguild -t "mfa.Ifrn" -g 21814 --resume
+```
+
+The manifest is updated as each channel finishes, so progress survives a crash or terminal closure.
+Partitioned exports are considered complete only when every recorded partition exists and passes
+integrity verification.
+
+If you want to create checkpoints without skipping any existing exports on the current run, use
+`--checkpoint` instead. A later run can then use `--resume`.
+
+```console
+./DiscordChatExporter.Cli exportguild -t "mfa.Ifrn" -g 21814 --checkpoint
+```
+
+A manifest/catalog write failure is reported as a warning and does not invalidate an otherwise
+successful channel export.
 
 #### Including threads
 
