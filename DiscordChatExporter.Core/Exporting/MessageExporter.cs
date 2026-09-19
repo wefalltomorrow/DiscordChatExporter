@@ -88,6 +88,7 @@ internal partial class MessageExporter(ExportContext context) : IAsyncDisposable
             // Writer must be disposed, even if it fails to write the postamble
             finally
             {
+                _bytesInClosedPartitions += _writer.BytesWritten;
                 await _writer.DisposeAsync();
                 _writer = null;
             }
@@ -112,6 +113,8 @@ internal partial class MessageExporter(ExportContext context) : IAsyncDisposable
         await writer.WriteMessageAsync(message, cancellationToken);
         _currentFile!.Record(message);
         MessagesExported++;
+
+        ExportStats.Current?.ReportExported(MessagesExported, BytesExported);
     }
 
     internal async ValueTask DisposeAsync(CancellationToken cancellationToken)
