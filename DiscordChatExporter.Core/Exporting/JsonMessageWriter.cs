@@ -364,10 +364,7 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
         await _writer.FlushAsync(cancellationToken);
     }
 
-    private async ValueTask WritePollAsync(
-        Poll poll,
-        CancellationToken cancellationToken = default
-    )
+    private async ValueTask WritePollAsync(Poll poll, CancellationToken cancellationToken = default)
     {
         _writer.WriteStartObject();
 
