@@ -97,7 +97,8 @@ public partial class LocalizationManager
             [nameof(BeforeDateLabel)] = "До (дата)",
             [nameof(BeforeDateTooltip)] = "Включать только сообщения, отправленные до этой даты",
             [nameof(AfterTimeLabel)] = "После (время)",
-            [nameof(AfterTimeTooltip)] = "Включать только сообщения, отправленные после этого времени",
+            [nameof(AfterTimeTooltip)] =
+                "Включать только сообщения, отправленные после этого времени",
             [nameof(BeforeTimeLabel)] = "До (время)",
             [nameof(BeforeTimeTooltip)] = "Включать только сообщения, отправленные до этого времени",
             [nameof(PartitionLimitLabel)] = "Разделять экспорт",
