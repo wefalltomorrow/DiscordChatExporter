@@ -384,6 +384,8 @@ public partial class DashboardViewModel : ViewModelBase
                     var thread in _discord.GetGuildThreadsAsync(
                         SelectedGuild.Id,
                         _settingsService.ThreadInclusionMode == ThreadInclusionMode.All
+                            ? ThreadKinds.All
+                            : ThreadKinds.Active
                     )
                 )
                 {
@@ -700,6 +702,12 @@ public partial class DashboardViewModel : ViewModelBase
                 dialog.ShouldFormatMarkdown,
                 false,
                 false,
+                // JSON normalization, extended fields, caching, and skip-empty are CLI-only.
+                false,
+                false,
+                true,
+                false,
+                false,
                 _settingsService.Locale,
                 _settingsService.IsUtcNormalizationEnabled
             );
@@ -814,6 +822,12 @@ public partial class DashboardViewModel : ViewModelBase
             dialog.ShouldFormatMarkdown,
             dialog.ShouldDownloadAssets,
             dialog.ShouldReuseAssets,
+            // JSON normalization, extended fields, caching, and skip-empty are CLI-only.
+            false,
+            false,
+            true,
+            false,
+            false,
             _settingsService.Locale,
             _settingsService.IsUtcNormalizationEnabled
         );
