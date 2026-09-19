@@ -107,8 +107,7 @@ public class JsonRetrySpecs
             (_, _) => ValueTask.CompletedTask
         );
 
-        var act = async () =>
-            await discord.TryGetUserAsync(Snowflake.Parse("123456789012345678"));
+        var act = async () => await discord.TryGetUserAsync(Snowflake.Parse("123456789012345678"));
 
         var exception = await act.Should().ThrowAsync<DiscordChatExporterException>();
 
