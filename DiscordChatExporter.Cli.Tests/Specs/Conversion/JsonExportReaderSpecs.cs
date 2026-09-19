@@ -233,8 +233,9 @@ public sealed class JsonExportReaderSpecs : IDisposable
 
         var parsed = await JsonExportReader.ParseAsync(path);
 
-        var poll = parsed.Messages.Single().Poll.Should().NotBeNull().Subject;
-        poll.Question.Should().Be("Best route?");
+        var poll = parsed.Messages.Single().Poll;
+        poll.Should().NotBeNull();
+        poll!.Question.Should().Be("Best route?");
         poll.AllowsMultipleAnswers.Should().BeTrue();
         poll.ExpiresAt.Should().Be(DateTimeOffset.UnixEpoch.AddDays(1));
         poll.Answers.Should().HaveCount(2);
