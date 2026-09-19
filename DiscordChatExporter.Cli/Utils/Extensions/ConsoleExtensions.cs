@@ -1,6 +1,8 @@
 using System;
 using System.Threading.Tasks;
 using CliFx.Infrastructure;
+using DiscordChatExporter.Cli.Utils;
+using DiscordChatExporter.Core.Exporting;
 using Spectre.Console;
 
 namespace DiscordChatExporter.Cli.Utils.Extensions;
@@ -22,7 +24,9 @@ internal static class ConsoleExtensions
         public Status CreateStatusTicker() =>
             console.CreateAnsiConsole().Status().AutoRefresh(true);
 
-        public Progress CreateProgressTicker() =>
+        // The progress bar is deliberately absent: the percentage already carries that number,
+        // and the space is better spent on the export's live counters
+        public Progress CreateProgressTicker(ExportStatsColumn statsColumn) =>
             console
                 .CreateAnsiConsole()
                 .Progress()
@@ -31,14 +35,15 @@ internal static class ConsoleExtensions
                 .HideCompleted(false)
                 .Columns(
                     new TaskDescriptionColumn { Alignment = Justify.Left },
-                    new ProgressBarColumn(),
-                    new PercentageColumn()
+                    new PercentageColumn(),
+                    statsColumn
                 );
     }
 
     public static async ValueTask StartTaskAsync(
         this ProgressContext context,
         string description,
+        Action<ProgressTask>? initialize,
         Func<ProgressTask, ValueTask> performOperationAsync
     )
     {
@@ -50,6 +55,8 @@ internal static class ConsoleExtensions
             actualDescription,
             new ProgressTaskSettings { MaxValue = 1 }
         );
+
+        initialize?.Invoke(progressTask);
 
         try
         {

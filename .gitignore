@@ -3,6 +3,7 @@
 .idea/
 *.suo
 *.user
+*.json
 
 # Build results
 bin/

@@ -37,6 +37,16 @@ public static class ImageCdn
             ? $"https://cdn.discordapp.com/icons/{guildId}/{iconHash}.gif?size={size}"
             : $"https://cdn.discordapp.com/icons/{guildId}/{iconHash}.png?size={size}";
 
+    // A guild banner shares the '/banners' path with user banners, but is keyed by the guild
+    public static string GetGuildBannerUrl(Snowflake guildId, string bannerHash, int size = 512) =>
+        bannerHash.StartsWith("a_", StringComparison.Ordinal)
+            ? $"https://cdn.discordapp.com/banners/{guildId}/{bannerHash}.gif?size={size}"
+            : $"https://cdn.discordapp.com/banners/{guildId}/{bannerHash}.png?size={size}";
+
+    // Splashes cannot be animated, so there is no GIF variant to pick here
+    public static string GetGuildSplashUrl(Snowflake guildId, string splashHash, int size = 512) =>
+        $"https://cdn.discordapp.com/splashes/{guildId}/{splashHash}.png?size={size}";
+
     public static string GetChannelIconUrl(Snowflake channelId, string iconHash, int size = 512) =>
         iconHash.StartsWith("a_", StringComparison.Ordinal)
             ? $"https://cdn.discordapp.com/channel-icons/{channelId}/{iconHash}.gif?size={size}"
@@ -59,6 +69,23 @@ public static class ImageCdn
         avatarHash.StartsWith("a_", StringComparison.Ordinal)
             ? $"https://cdn.discordapp.com/guilds/{guildId}/users/{userId}/avatars/{avatarHash}.gif?size={size}"
             : $"https://cdn.discordapp.com/guilds/{guildId}/users/{userId}/avatars/{avatarHash}.png?size={size}";
+
+    // Banners follow the same shape as avatars: a global one on the user, and an optional
+    // guild-specific override on the member.
+    public static string GetUserBannerUrl(Snowflake userId, string bannerHash, int size = 512) =>
+        bannerHash.StartsWith("a_", StringComparison.Ordinal)
+            ? $"https://cdn.discordapp.com/banners/{userId}/{bannerHash}.gif?size={size}"
+            : $"https://cdn.discordapp.com/banners/{userId}/{bannerHash}.png?size={size}";
+
+    public static string GetMemberBannerUrl(
+        Snowflake guildId,
+        Snowflake userId,
+        string bannerHash,
+        int size = 512
+    ) =>
+        bannerHash.StartsWith("a_", StringComparison.Ordinal)
+            ? $"https://cdn.discordapp.com/guilds/{guildId}/users/{userId}/banners/{bannerHash}.gif?size={size}"
+            : $"https://cdn.discordapp.com/guilds/{guildId}/users/{userId}/banners/{bannerHash}.png?size={size}";
 
     public static string GetStickerUrl(Snowflake stickerId, string format = "png") =>
         $"https://cdn.discordapp.com/stickers/{stickerId}.{format}";
