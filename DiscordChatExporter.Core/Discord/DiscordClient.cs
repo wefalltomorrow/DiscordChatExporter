@@ -164,11 +164,7 @@ public class DiscordClient(
 
                     HttpResponseMessage response;
 
-                    if (
-                        tokenKind == TokenKind.User
-                        && _useBrowserTransport
-                        && _session is not null
-                    )
+                    if (tokenKind == TokenKind.User && _useBrowserTransport && _session is not null)
                     {
                         var cloakResponse = await _session.GetAsync(
                             requestUri.ToString(),
