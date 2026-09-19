@@ -572,7 +572,13 @@ public class DiscordClient(
         if (guildId == Guild.DirectMessages.Id)
             return Guild.DirectMessages;
 
-        var response = await GetJsonResponseAsync($"guilds/{guildId}", cancellationToken);
+        // 'with_counts' costs nothing extra (same request) and is the only way to get the
+        // approximate member and presence counts
+        var response = await GetJsonResponseAsync(
+            $"guilds/{guildId}?with_counts=true",
+            cancellationToken
+        );
+
         return Guild.Parse(response);
     }
 
@@ -625,13 +631,13 @@ public class DiscordClient(
 
     public async IAsyncEnumerable<Channel> GetGuildThreadsAsync(
         Snowflake guildId,
-        bool includeArchived = false,
+        ThreadKinds threadKinds = ThreadKinds.Active,
         Snowflake? before = null,
         Snowflake? after = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
     {
-        if (guildId == Guild.DirectMessages.Id)
+        if (guildId == Guild.DirectMessages.Id || threadKinds == ThreadKinds.None)
             yield break;
 
         var channels = await GetGuildChannelsAsync(guildId, cancellationToken);
@@ -639,7 +645,7 @@ public class DiscordClient(
         foreach (
             var channel in await GetChannelThreadsAsync(
                 channels,
-                includeArchived,
+                threadKinds,
                 before,
                 after,
                 cancellationToken
@@ -663,7 +669,9 @@ public class DiscordClient(
             yield return Role.Parse(roleJson);
     }
 
-    public async ValueTask<Member?> TryGetGuildMemberAsync(
+    // Exposes the raw payload so that it can be persisted verbatim by a cache, which keeps
+    // cached entries usable as more of the member object gets exported over time.
+    public async ValueTask<JsonElement?> TryGetGuildMemberJsonAsync(
         Snowflake guildId,
         Snowflake memberId,
         CancellationToken cancellationToken = default
@@ -672,7 +680,7 @@ public class DiscordClient(
         if (guildId == Guild.DirectMessages.Id)
             return null;
 
-        var response = await TryGetJsonResponseAsync(
+        return await TryGetJsonResponseAsync(
             $"guilds/{guildId}/members/{memberId}",
             cancellationToken
         );
@@ -736,14 +744,24 @@ public class DiscordClient(
         return Channel.Parse(response.Value, parent);
     }
 
+    // Boundary checks for a thread, based only on the thread's own identity: its ID encodes when
+    // it was created, and its last message ID when it last saw activity. Both are exact, which the
+    // archive timestamp is not -- that one is only good for paging through the archived listing.
+    private static bool IsThreadInRange(Channel thread, Snowflake? before, Snowflake? after) =>
+        (before is null || thread.MayHaveMessagesBefore(before.Value))
+        && (after is null || thread.MayHaveMessagesAfter(after.Value));
+
     public async IAsyncEnumerable<Channel> GetChannelThreadsAsync(
         IReadOnlyList<Channel> channels,
-        bool includeArchived = false,
+        ThreadKinds threadKinds = ThreadKinds.Active,
         Snowflake? before = null,
         Snowflake? after = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
     {
+        if (threadKinds == ThreadKinds.None)
+            yield break;
+
         var filteredChannels = channels
             // Categories cannot have threads
             .Where(c => !c.IsCategory)
@@ -768,10 +786,16 @@ public class DiscordClient(
         {
             foreach (var channel in filteredChannels)
             {
-                // Either include both active and archived threads, or only active threads
-                foreach (
-                    var isArchived in includeArchived ? new[] { false, true } : new[] { false }
-                )
+                // One pass per requested archive state; asking for neither is already
+                // handled by the early return above
+                var archiveStates = threadKinds switch
+                {
+                    ThreadKinds.Active => new[] { false },
+                    ThreadKinds.Archived => new[] { true },
+                    _ => new[] { false, true },
+                };
+
+                foreach (var isArchived in archiveStates)
                 {
                     // Offset is just the index of the last thread in the previous batch
                     var currentOffset = 0;
@@ -829,35 +853,41 @@ public class DiscordClient(
                 guilds.Add(channel.GuildId);
 
             // Active threads
-            foreach (var guildId in guilds)
+            if (threadKinds.Includes(ThreadKinds.Active))
             {
-                var parentsById = filteredChannels.ToDictionary(c => c.Id);
-
-                var response = await GetJsonResponseAsync(
-                    $"guilds/{guildId}/threads/active",
-                    cancellationToken
-                );
-
-                foreach (var threadJson in response.GetProperty("threads").EnumerateArray())
+                foreach (var guildId in guilds)
                 {
-                    var parent = threadJson
-                        .GetPropertyOrNull("parent_id")
-                        ?.GetNonWhiteSpaceStringOrNull()
-                        ?.Pipe(Snowflake.Parse)
-                        .Pipe(parentsById.GetValueOrDefault);
+                    var parentsById = filteredChannels.ToDictionary(c => c.Id);
 
-                    if (filteredChannels.Contains(parent))
+                    var response = await GetJsonResponseAsync(
+                        $"guilds/{guildId}/threads/active",
+                        cancellationToken
+                    );
+
+                    foreach (var threadJson in response.GetProperty("threads").EnumerateArray())
                     {
-                        var thread = Channel.Parse(threadJson, parent);
+                        var parent = threadJson
+                            .GetPropertyOrNull("parent_id")
+                            ?.GetNonWhiteSpaceStringOrNull()
+                            ?.Pipe(Snowflake.Parse)
+                            .Pipe(parentsById.GetValueOrDefault);
 
-                        if (seenThreadIds.Add(thread.Id))
-                            yield return thread;
+                        if (filteredChannels.Contains(parent))
+                        {
+                            var thread = Channel.Parse(threadJson, parent);
+
+                            if (!IsThreadInRange(thread, before, after))
+                                continue;
+
+                            if (seenThreadIds.Add(thread.Id))
+                                yield return thread;
+                        }
                     }
                 }
             }
 
             // Archived threads
-            if (includeArchived)
+            if (threadKinds.Includes(ThreadKinds.Archived))
             {
                 foreach (var channel in filteredChannels)
                 {
@@ -867,7 +897,6 @@ public class DiscordClient(
 
                         while (true)
                         {
-                            // Threads are sorted by archive timestamp, not by last message timestamp
                             var url = new UrlBuilder()
                                 .SetPath($"channels/{channel.Id}/threads/archived/{archiveType}")
                                 .SetQueryParameter("before", currentBefore)
@@ -878,6 +907,9 @@ public class DiscordClient(
                             if (response is null)
                                 break;
 
+                            var previousBefore = currentBefore;
+                            var hasReachedRangeStart = false;
+
                             foreach (
                                 var threadJson in response
                                     .Value.GetProperty("threads")
@@ -886,16 +918,46 @@ public class DiscordClient(
                             {
                                 var thread = Channel.Parse(threadJson, channel);
 
-                                currentBefore = threadJson
-                                    .GetProperty("thread_metadata")
-                                    .GetProperty("archive_timestamp")
-                                    .GetString();
+                                var archivedAt = threadJson
+                                    .GetPropertyOrNull("thread_metadata")
+                                    ?.GetPropertyOrNull("archive_timestamp")
+                                    ?.GetDateTimeOffsetOrNull();
+
+                                if (archivedAt is not null)
+                                {
+                                    currentBefore = archivedAt.Value.ToString(
+                                        "O",
+                                        CultureInfo.InvariantCulture
+                                    );
+                                }
+
+                                // A thread cannot receive messages while it is archived, so its
+                                // archive timestamp is never earlier than its last message. Once
+                                // that timestamp falls below the lower boundary, every remaining
+                                // thread in the listing is older still, so none of them can have
+                                // messages in range either.
+                                if (after is not null && archivedAt < after.Value.ToDate())
+                                {
+                                    hasReachedRangeStart = true;
+                                    break;
+                                }
+
+                                if (!IsThreadInRange(thread, before, after))
+                                    continue;
 
                                 if (seenThreadIds.Add(thread.Id))
                                     yield return thread;
                             }
 
+                            if (hasReachedRangeStart)
+                                break;
+
                             if (!response.Value.GetProperty("has_more").GetBoolean())
+                                break;
+
+                            // A page that produced no usable cursor would otherwise be requested
+                            // over and over
+                            if (currentBefore == previousBefore)
                                 break;
                         }
                     }
