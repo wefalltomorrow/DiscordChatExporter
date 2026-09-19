@@ -1,5 +1,7 @@
 name: main
 
+# Fork integration branch is intentionally built on push.
+
 on:
   workflow_dispatch:
   push:
