@@ -15,7 +15,9 @@ public partial record User(
     int? Discriminator,
     string Name,
     string DisplayName,
-    string AvatarUrl
+    string AvatarUrl,
+    // Global profile banner; a member may override it with a guild-specific one
+    string? BannerUrl
 ) : IHasId
 {
     public string DiscriminatorFormatted { get; } =
@@ -51,6 +53,10 @@ public partial record User
                 ?.Pipe(h => ImageCdn.GetUserAvatarUrl(id, h))
             ?? ImageCdn.GetFallbackUserAvatarUrl(avatarIndex);
 
-        return new User(id, isBot, discriminator, name, displayName, avatarUrl);
+        var bannerUrl = json.GetPropertyOrNull("banner")
+            ?.GetNonWhiteSpaceStringOrNull()
+            ?.Pipe(h => ImageCdn.GetUserBannerUrl(id, h));
+
+        return new User(id, isBot, discriminator, name, displayName, avatarUrl, bannerUrl);
     }
 }

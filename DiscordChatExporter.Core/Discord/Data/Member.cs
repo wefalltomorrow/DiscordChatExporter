@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -12,7 +13,15 @@ public partial record Member(
     User User,
     string? DisplayName,
     string? AvatarUrl,
-    IReadOnlyList<Snowflake> RoleIds
+    // Guild-specific banner, which overrides the user's global one when set
+    string? BannerUrl,
+    IReadOnlyList<Snowflake> RoleIds,
+    DateTimeOffset? JoinedAt,
+    // Set only while the member is boosting the guild
+    DateTimeOffset? PremiumSince,
+    MemberFlags Flags,
+    // True while the member has not yet passed the guild's membership screening
+    bool IsPending
 ) : IHasId
 {
     public Snowflake Id { get; } = User.Id;
@@ -20,7 +29,9 @@ public partial record Member(
 
 public partial record Member
 {
-    public static Member CreateFallback(User user) => new(user, null, null, []);
+    // Used for users who are no longer in the guild, so none of the guild-specific data is known
+    public static Member CreateFallback(User user) =>
+        new(user, null, null, null, [], null, null, MemberFlags.None, false);
 
     public static Member Parse(JsonElement json, Snowflake? guildId = null)
     {
@@ -41,6 +52,31 @@ public partial record Member
                 ?.Pipe(h => ImageCdn.GetMemberAvatarUrl(guildId.Value, user.Id, h))
             : null;
 
-        return new Member(user, displayName, avatarUrl, roleIds);
+        var bannerUrl = guildId is not null
+            ? json.GetPropertyOrNull("banner")
+                ?.GetNonWhiteSpaceStringOrNull()
+                ?.Pipe(h => ImageCdn.GetMemberBannerUrl(guildId.Value, user.Id, h))
+            : null;
+
+        var joinedAt = json.GetPropertyOrNull("joined_at")?.GetDateTimeOffsetOrNull();
+        var premiumSince = json.GetPropertyOrNull("premium_since")?.GetDateTimeOffsetOrNull();
+
+        var flags =
+            json.GetPropertyOrNull("flags")?.GetInt32OrNull()?.Pipe(f => (MemberFlags)f)
+            ?? MemberFlags.None;
+
+        var isPending = json.GetPropertyOrNull("pending")?.GetBooleanOrNull() ?? false;
+
+        return new Member(
+            user,
+            displayName,
+            avatarUrl,
+            bannerUrl,
+            roleIds,
+            joinedAt,
+            premiumSince,
+            flags,
+            isPending
+        );
     }
 }

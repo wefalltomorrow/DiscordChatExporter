@@ -14,7 +14,8 @@ public record MessageSnapshot(
     string Content,
     IReadOnlyList<Attachment> Attachments,
     IReadOnlyList<Embed> Embeds,
-    IReadOnlyList<Sticker> Stickers
+    IReadOnlyList<Sticker> Stickers,
+    IReadOnlyList<Component> Components
 )
 {
     public static MessageSnapshot Parse(JsonElement json)
@@ -45,13 +46,21 @@ public record MessageSnapshot(
                 .ToArray()
             ?? [];
 
+        var components =
+            json.GetPropertyOrNull("components")
+                ?.EnumerateArrayOrNull()
+                ?.Select(Component.Parse)
+                .ToArray()
+            ?? [];
+
         return new MessageSnapshot(
             timestamp,
             editedTimestamp,
             content,
             attachments,
             embeds,
-            stickers
+            stickers,
+            components
         );
     }
 }

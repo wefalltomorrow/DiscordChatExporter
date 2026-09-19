@@ -15,4 +15,13 @@ public enum MessageFlags
     HasThread = 32,
     Ephemeral = 64,
     Loading = 128,
+    FailedToMentionSomeRolesInThread = 256,
+    ShouldShowLinkNotDiscordWarning = 1024,
+    SuppressNotifications = 4096,
+    IsVoiceMessage = 8192,
+    HasSnapshot = 16384,
+
+    // Marks a message that carries its content in the component tree instead of in 'content',
+    // which is why such a message looks empty to anything that only reads the latter
+    IsComponentsV2 = 32768,
 }
