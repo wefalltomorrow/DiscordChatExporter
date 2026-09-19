@@ -19,11 +19,7 @@ public class ManifestWriterSpecs : IDisposable
 
     public void Dispose() => Directory.Delete(_dir, true);
 
-    private static ManifestEntry Entry(
-        string file,
-        long messageCount,
-        bool partitioned = false
-    ) =>
+    private static ManifestEntry Entry(string file, long messageCount, bool partitioned = false) =>
         new(
             GuildId: "1",
             GuildName: "g",
