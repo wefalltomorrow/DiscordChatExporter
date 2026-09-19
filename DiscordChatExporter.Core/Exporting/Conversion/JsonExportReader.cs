@@ -380,11 +380,7 @@ public static class JsonExportReader
         new(GetBoolean(json, "isFinalized"), ParseArray(json, "answers", ParsePollAnswerResult));
 
     private static PollAnswerResult ParsePollAnswerResult(JsonElement json) =>
-        new(
-            GetInt32(json, "id"),
-            GetInt32(json, "count"),
-            GetBoolean(json, "didCurrentUserVote")
-        );
+        new(GetInt32(json, "id"), GetInt32(json, "count"), GetBoolean(json, "didCurrentUserVote"));
 
     private static MessageReference ParseMessageReference(JsonElement json) =>
         new(
