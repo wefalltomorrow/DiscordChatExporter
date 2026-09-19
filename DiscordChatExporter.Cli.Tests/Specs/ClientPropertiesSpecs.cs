@@ -107,8 +107,8 @@ public class ClientPropertiesSpecs
     [Fact]
     public void Browser_major_version_is_consistent_with_user_agent()
     {
-        DiscordUserClientProfile.BrowserUserAgent
-            .Should()
+        DiscordUserClientProfile
+            .BrowserUserAgent.Should()
             .Contain($"Chrome/{DiscordUserClientProfile.BrowserMajorVersion}.");
     }
 
