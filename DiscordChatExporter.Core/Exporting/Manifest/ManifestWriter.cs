@@ -42,14 +42,7 @@ public static class ManifestWriter
         Func<ExportManifest?, IReadOnlyList<ManifestEntry>> createEntries,
         DateTimeOffset now,
         CancellationToken cancellationToken = default
-    ) =>
-        await UpdateCoreAsync(
-            dirPath,
-            createEntries,
-            null,
-            now,
-            cancellationToken
-        );
+    ) => await UpdateCoreAsync(dirPath, createEntries, null, now, cancellationToken);
 
     private static bool HasSameExportIdentity(ManifestEntry left, ManifestEntry right) =>
         left.GuildId == right.GuildId
