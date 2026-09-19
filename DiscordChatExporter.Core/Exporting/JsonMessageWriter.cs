@@ -340,13 +340,6 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
 
         _writer.WriteEndArray();
 
-        // Poll
-        if (message.Poll is not null)
-        {
-            _writer.WritePropertyName("poll");
-            await WritePollAsync(message.Poll, cancellationToken);
-        }
-
         // Inline emoji
         _writer.WriteStartArray("inlineEmojis");
 
@@ -749,6 +742,13 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
             await WriteUserAsync(message.Interaction.User, true, cancellationToken);
 
             _writer.WriteEndObject();
+        }
+
+        // Poll
+        if (message.Poll is not null)
+        {
+            _writer.WritePropertyName("poll");
+            await WritePollAsync(message.Poll, cancellationToken);
         }
 
         // Inline emoji
