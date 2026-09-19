@@ -21,10 +21,8 @@ public class JsonRetrySpecs
         var handler = new QueueHttpMessageHandler([
             // Token-kind probe.
             new HttpResponseMessage(HttpStatusCode.OK),
-
             // First user request: syntactically truncated JSON.
             JsonResponse("""{"id":"123456789012345678","username":"test"""),
-
             // Retry of the same user request: valid response.
             JsonResponse(
                 """
@@ -60,7 +58,6 @@ public class JsonRetrySpecs
         var handler = new QueueHttpMessageHandler([
             // Token-kind probe.
             new HttpResponseMessage(HttpStatusCode.OK),
-
             JsonResponse(
                 """
                 {
