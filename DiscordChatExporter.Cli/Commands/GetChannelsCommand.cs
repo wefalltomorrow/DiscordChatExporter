@@ -22,7 +22,9 @@ public partial class GetChannelsCommand : DiscordCommandBase
 
     [CommandOption(
         "include-threads",
-        Description = "Which types of threads should be included.",
+        Description = "Which types of threads should be included: "
+            + "'none', 'active', 'archived', 'all', or 'only' to list just the channels "
+            + "that hold threads.",
         Converter = typeof(ThreadInclusionModeInputConverter)
     )]
     public ThreadInclusionMode ThreadInclusionMode { get; set; } = ThreadInclusionMode.None;
@@ -45,23 +47,30 @@ public partial class GetChannelsCommand : DiscordCommandBase
             .OrderDescending()
             .FirstOrDefault();
 
-        var threads =
-            ThreadInclusionMode != ThreadInclusionMode.None
-                ? (
-                    await Discord.GetChannelThreadsAsync(
-                        channels,
-                        ThreadInclusionMode == ThreadInclusionMode.All,
-                        null,
-                        null,
-                        cancellationToken
-                    )
-                )
-                    .OrderBy(c => c.Name)
-                    .ToArray()
-                : [];
+        var threads = (
+            await Discord.GetGuildThreadsAsync(
+                GuildId,
+                ThreadInclusionMode.ThreadKinds,
+                null,
+                null,
+                cancellationToken
+            )
+        )
+            .OrderBy(c => c.Name)
+            .ToArray();
 
         foreach (var channel in channels)
         {
+            // Under 'only', a channel is listed for the sake of the threads underneath it, so
+            // there is nothing to show for one that has none
+            if (
+                !ThreadInclusionMode.IncludesParentChannels
+                && !threads.Any(t => t.Parent?.Id == channel.Id)
+            )
+            {
+                continue;
+            }
+
             // Channel ID
             await console.Output.WriteAsync(
                 channel.Id.ToString().PadRight(channelIdMaxLength, ' ')
@@ -106,7 +115,7 @@ public partial class GetChannelsCommand : DiscordCommandBase
                 // Thread status
                 using (console.WithForegroundColor(ConsoleColor.White))
                     await console.Output.WriteLineAsync(
-                        channelThread.IsArchived ? "Archived" : "Active"
+                        channelThread.IsArchived == true ? "Archived" : "Active"
                     );
             }
         }
