@@ -8,7 +8,7 @@ using Gress;
 
 namespace DiscordChatExporter.Core.Exporting;
 
-public class ChannelExporter(DiscordClient discord)
+public class ChannelExporter(DiscordClient discord, ExportCache? cache = null)
 {
     public async ValueTask<ExportResult> ExportChannelAsync(
         ExportRequest request,
@@ -28,7 +28,7 @@ public class ChannelExporter(DiscordClient discord)
         }
 
         // Build context
-        var context = new ExportContext(discord, request);
+        var context = new ExportContext(discord, request, Cache.GetGuildCache(request.Guild.Id));
         await context.PopulateChannelsAndRolesAsync(cancellationToken);
 
         // Initialize the exporter before further checks to ensure the file is created even if
