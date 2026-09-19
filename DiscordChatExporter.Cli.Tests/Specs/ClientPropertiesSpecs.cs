@@ -88,10 +88,7 @@ public class ClientPropertiesSpecs
     [InlineData("true", false)]
     [InlineData("yes", false)]
     [InlineData("on", false)]
-    public void Browser_transport_can_be_disabled_explicitly(
-        string? disabledValue,
-        bool expected
-    )
+    public void Browser_transport_can_be_disabled_explicitly(string? disabledValue, bool expected)
     {
         DiscordUserClientProfile.BrowserMajorVersion.Should().BePositive();
 
