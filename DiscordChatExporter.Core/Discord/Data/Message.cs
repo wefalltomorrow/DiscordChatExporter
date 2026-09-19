@@ -24,6 +24,7 @@ public partial record Message(
     IReadOnlyList<Attachment> Attachments,
     IReadOnlyList<Embed> Embeds,
     IReadOnlyList<Sticker> Stickers,
+    IReadOnlyList<Component> Components,
     IReadOnlyList<Reaction> Reactions,
     IReadOnlyList<User> MentionedUsers,
     MessageReference? Reference,
@@ -38,6 +39,8 @@ public partial record Message(
         && !Attachments.Any()
         && !Embeds.Any()
         && !Stickers.Any()
+        // Components-v2 messages carry their visible content in the component tree.
+        && !Components.Any()
         && Poll is null;
 
     public bool IsSystemNotification { get; } =
@@ -181,6 +184,13 @@ public partial record Message
                 .ToArray()
             ?? [];
 
+        var components =
+            json.GetPropertyOrNull("components")
+                ?.EnumerateArrayOrNull()
+                ?.Select(Component.Parse)
+                .ToArray()
+            ?? [];
+
         var reactions =
             json.GetPropertyOrNull("reactions")
                 ?.EnumerateArrayOrNull()
@@ -224,6 +234,7 @@ public partial record Message
             attachments,
             embeds,
             stickers,
+            components,
             reactions,
             mentionedUsers,
             messageReference,
