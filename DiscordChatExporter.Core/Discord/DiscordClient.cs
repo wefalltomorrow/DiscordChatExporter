@@ -76,6 +76,7 @@ public class DiscordClient(
         cancellationToken
     ) => new ValueTask(Task.Delay(delay, cancellationToken));
     private readonly bool _useBrowserTransport = IsBrowserTransportSupported;
+    private readonly bool _refreshUserClientBuildNumber = true;
     private TokenKind? _resolvedTokenKind;
 
     public event EventHandler<RateLimitState>? RateLimitChanged;
@@ -92,6 +93,7 @@ public class DiscordClient(
         _session?.Dispose();
         _session = null;
         _useBrowserTransport = false;
+        _refreshUserClientBuildNumber = false;
 
         if (delayAsync is not null)
             _delayAsync = delayAsync;
@@ -151,6 +153,15 @@ public class DiscordClient(
                         ["Authorization"] = tokenKind == TokenKind.Bot ? $"Bot {token}" : token,
                     };
 
+                    if (tokenKind == TokenKind.User)
+                    {
+                        await _userClientProfile.AddHeadersAsync(
+                            headers,
+                            innerContext.CancellationToken,
+                            _refreshUserClientBuildNumber
+                        );
+                    }
+
                     HttpResponseMessage response;
 
                     if (
@@ -159,11 +170,6 @@ public class DiscordClient(
                         && _session is not null
                     )
                     {
-                        await _userClientProfile.AddHeadersAsync(
-                            headers,
-                            innerContext.CancellationToken
-                        );
-
                         var cloakResponse = await _session.GetAsync(
                             requestUri.ToString(),
                             headers: headers,
