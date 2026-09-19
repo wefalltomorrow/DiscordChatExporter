@@ -11,9 +11,14 @@ on:
     branches:
       - prime
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # Outputs from this job aren't really used, but it's here to verify that the Dockerfile builds correctly
   pack:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
