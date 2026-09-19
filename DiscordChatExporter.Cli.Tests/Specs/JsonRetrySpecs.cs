@@ -19,24 +19,24 @@ public class JsonRetrySpecs
     public async Task Retries_the_exact_json_request_after_a_truncated_response()
     {
         var handler = new QueueHttpMessageHandler([
-                // Token-kind probe.
-                new HttpResponseMessage(HttpStatusCode.OK),
+            // Token-kind probe.
+            new HttpResponseMessage(HttpStatusCode.OK),
 
-                // First user request: syntactically truncated JSON.
-                JsonResponse("""{"id":"123456789012345678","username":"test"""),
+            // First user request: syntactically truncated JSON.
+            JsonResponse("""{"id":"123456789012345678","username":"test"""),
 
-                // Retry of the same user request: valid response.
-                JsonResponse(
-                    """
-                    {
-                      "id": "123456789012345678",
-                      "username": "test-user",
-                      "global_name": "Test User",
-                      "discriminator": "0",
-                      "avatar": null
-                    }
-                    """
-                ),
+            // Retry of the same user request: valid response.
+            JsonResponse(
+                """
+                {
+                  "id": "123456789012345678",
+                  "username": "test-user",
+                  "global_name": "Test User",
+                  "discriminator": "0",
+                  "avatar": null
+                }
+                """
+            ),
         ]);
 
         using var httpClient = new HttpClient(handler);
@@ -58,20 +58,20 @@ public class JsonRetrySpecs
     public async Task Managed_fallback_still_sends_official_web_user_headers()
     {
         var handler = new QueueHttpMessageHandler([
-                // Token-kind probe.
-                new HttpResponseMessage(HttpStatusCode.OK),
+            // Token-kind probe.
+            new HttpResponseMessage(HttpStatusCode.OK),
 
-                JsonResponse(
-                    """
-                    {
-                      "id": "123456789012345678",
-                      "username": "test-user",
-                      "global_name": "Test User",
-                      "discriminator": "0",
-                      "avatar": null
-                    }
-                    """
-                ),
+            JsonResponse(
+                """
+                {
+                  "id": "123456789012345678",
+                  "username": "test-user",
+                  "global_name": "Test User",
+                  "discriminator": "0",
+                  "avatar": null
+                }
+                """
+            ),
         ]);
 
         using var httpClient = new HttpClient(handler);
