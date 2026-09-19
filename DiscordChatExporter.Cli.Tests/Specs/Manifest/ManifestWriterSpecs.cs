@@ -135,9 +135,10 @@ public class ManifestWriterSpecs : IDisposable
         );
 
         manifest.Should().NotBeNull();
-        manifest!.Entries.Select(e => e.File).Should().BeEquivalentTo(
-            ["archive.json", "archive [part 2].json", "other.json"]
-        );
+        manifest!
+            .Entries.Select(e => e.File)
+            .Should()
+            .BeEquivalentTo(["archive.json", "archive [part 2].json", "other.json"]);
         manifest.Entries.Should().NotContain(e => e.File == "archive [part 3].json");
     }
 
