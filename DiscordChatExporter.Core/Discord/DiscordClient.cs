@@ -205,9 +205,10 @@ public class DiscordClient(
 
                         if (remainingRequestCount <= 0 && resetAfterDelay is not null)
                         {
-                            var delay =
-                                (resetAfterDelay.Value + TimeSpan.FromSeconds(1))
-                                .Clamp(TimeSpan.Zero, TimeSpan.FromSeconds(60));
+                            var delay = (resetAfterDelay.Value + TimeSpan.FromSeconds(1)).Clamp(
+                                TimeSpan.Zero,
+                                TimeSpan.FromSeconds(60)
+                            );
 
                             try
                             {
