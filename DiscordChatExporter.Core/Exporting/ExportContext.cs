@@ -54,31 +54,16 @@ internal class ExportContext(DiscordClient discord, ExportRequest request, bool 
     public string FormatDate(DateTimeOffset instant, string format = "g") =>
         NormalizeDate(instant).ToString(format, Request.CultureInfo);
 
+    // Kept for the call site in ChannelExporter; the underlying fetch now runs once per guild
+    // per run rather than once per channel.
     public async ValueTask PopulateChannelsAndRolesAsync(
         CancellationToken cancellationToken = default
-    )
-    {
-        await foreach (
-            var channel in Discord.GetGuildChannelsAsync(Request.Guild.Id, cancellationToken)
-        )
-        {
-            _channelsById[channel.Id] = channel;
-        }
+    ) => await guildCache.EnsureInitializedAsync(cancellationToken);
 
-        await foreach (var role in Discord.GetGuildRolesAsync(Request.Guild.Id, cancellationToken))
-        {
-            _rolesById[role.Id] = role;
-        }
-    }
-
-    // Threads are not preloaded, so we resolve them on demand
     public async ValueTask PopulateChannelAsync(
         Snowflake id,
         CancellationToken cancellationToken = default
-    )
-    {
-        if (_channelsById.ContainsKey(id))
-            return;
+    ) => await guildCache.PopulateChannelAsync(id, cancellationToken);
 
         if (IsOffline)
         {
@@ -130,18 +115,18 @@ internal class ExportContext(DiscordClient discord, ExportRequest request, bool 
     public async ValueTask PopulateMemberAsync(
         Snowflake id,
         CancellationToken cancellationToken = default
-    ) => await PopulateMemberAsync(id, null, cancellationToken);
+    ) => await guildCache.PopulateMemberAsync(id, null, cancellationToken);
 
     public async ValueTask PopulateMemberAsync(
         User user,
         CancellationToken cancellationToken = default
-    ) => await PopulateMemberAsync(user.Id, user, cancellationToken);
+    ) => await guildCache.PopulateMemberAsync(user.Id, user, cancellationToken);
 
-    public Member? TryGetMember(Snowflake id) => _membersById.GetValueOrDefault(id);
+    public Member? TryGetMember(Snowflake id) => guildCache.TryGetMember(id);
 
-    public Channel? TryGetChannel(Snowflake id) => _channelsById.GetValueOrDefault(id);
+    public Channel? TryGetChannel(Snowflake id) => guildCache.TryGetChannel(id);
 
-    public Role? TryGetRole(Snowflake id) => _rolesById.GetValueOrDefault(id);
+    public Role? TryGetRole(Snowflake id) => guildCache.TryGetRole(id);
 
     public string? TryGetEmojiImageUrl(Snowflake? id, string name, bool isAnimated) =>
         _emojiImageUrlsByKey.GetValueOrDefault((id, name, isAnimated))
