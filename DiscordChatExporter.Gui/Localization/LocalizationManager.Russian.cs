@@ -100,7 +100,8 @@ public partial class LocalizationManager
             [nameof(AfterTimeTooltip)] =
                 "Включать только сообщения, отправленные после этого времени",
             [nameof(BeforeTimeLabel)] = "До (время)",
-            [nameof(BeforeTimeTooltip)] = "Включать только сообщения, отправленные до этого времени",
+            [nameof(BeforeTimeTooltip)] =
+                "Включать только сообщения, отправленные до этого времени",
             [nameof(PartitionLimitLabel)] = "Разделять экспорт",
             [nameof(PartitionLimitTooltip)] =
                 "Разделить вывод на части, каждая ограничена указанным количеством сообщений (напр. '100') или размером файла (напр. '10mb')",
