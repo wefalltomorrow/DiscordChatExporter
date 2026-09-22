@@ -90,8 +90,10 @@ public class DiscordClient(
     private readonly object _hardRateLimitSync = new();
     private readonly Queue<DateTimeOffset> _invalidRequestTimes = new();
     private readonly Queue<DateTimeOffset> _hardRateLimitTimes = new();
-    private readonly ConcurrentDictionary<(TokenKind Kind, string Url), HttpStatusCode>
-        _knownUnavailableRequests = new();
+    private readonly ConcurrentDictionary<
+        (TokenKind Kind, string Url),
+        HttpStatusCode
+    > _knownUnavailableRequests = new();
     private readonly SemaphoreSlim _userRequestGate = new(
         UserRequestConcurrencyLimit,
         UserRequestConcurrencyLimit
