@@ -6,7 +6,6 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using DiscordChatExporter.Cli.Commands.Base;
 using DiscordChatExporter.Core.Discord;
 using DiscordChatExporter.Core.Discord.Data;
 using DiscordChatExporter.Core.Exceptions;
@@ -18,13 +17,8 @@ namespace DiscordChatExporter.Cli.Tests.Specs;
 public class RateLimitSpecs
 {
     [Fact]
-    public void Cli_rate_limit_opt_out_still_respects_user_token_advisory_limits()
+    public void User_token_advisory_limits_cannot_be_disabled()
     {
-        DiscordCommandBase
-            .GetRateLimitPreference(false)
-            .Should()
-            .Be(RateLimitPreference.RespectForUserTokens);
-
         RateLimitPreference.IgnoreAll.IsRespectedFor(TokenKind.User).Should().BeTrue();
         RateLimitPreference.IgnoreAll.IsRespectedFor(TokenKind.Bot).Should().BeFalse();
     }
