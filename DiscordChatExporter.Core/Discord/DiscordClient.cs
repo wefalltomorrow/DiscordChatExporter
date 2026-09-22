@@ -28,6 +28,11 @@ public class DiscordClient(
 {
     private const int JsonParseRetryAttempts = 5;
 
+    internal const int InvalidRequestCircuitBreakerThreshold = 100;
+    internal const int UserRequestConcurrencyLimit = 4;
+    internal const int BotRequestConcurrencyLimit = 16;
+    internal static readonly TimeSpan InvalidRequestCircuitBreakerWindow = TimeSpan.FromMinutes(10);
+
     private const string DisableBrowserTransportEnvironmentVariable =
         "DISCORDCHATEXPORTER_DISABLE_BROWSER_TRANSPORT";
 
@@ -77,6 +82,18 @@ public class DiscordClient(
     ) => new ValueTask(Task.Delay(delay, cancellationToken));
     private readonly bool _useBrowserTransport = IsBrowserTransportSupported;
     private readonly bool _refreshUserClientBuildNumber = true;
+    private readonly object _rateLimitSync = new();
+    private readonly object _invalidRequestSync = new();
+    private readonly Queue<DateTimeOffset> _invalidRequestTimes = new();
+    private readonly SemaphoreSlim _userRequestGate = new(
+        UserRequestConcurrencyLimit,
+        UserRequestConcurrencyLimit
+    );
+    private readonly SemaphoreSlim _botRequestGate = new(
+        BotRequestConcurrencyLimit,
+        BotRequestConcurrencyLimit
+    );
+    private DateTimeOffset _sharedRateLimitUntilUtc;
     private TokenKind? _resolvedTokenKind;
 
     public event EventHandler<RateLimitState>? RateLimitChanged;
@@ -117,20 +134,136 @@ public class DiscordClient(
         return response;
     }
 
+    private (DateTimeOffset PauseUntil, TimeSpan Delay) ExtendSharedRateLimit(TimeSpan delay)
+    {
+        if (delay <= TimeSpan.Zero)
+            return (default, TimeSpan.Zero);
+
+        var now = DateTimeOffset.UtcNow;
+        var requestedPauseUntil = now + delay;
+
+        lock (_rateLimitSync)
+        {
+            if (requestedPauseUntil >= _sharedRateLimitUntilUtc)
+            {
+                _sharedRateLimitUntilUtc = requestedPauseUntil;
+                return (_sharedRateLimitUntilUtc, delay);
+            }
+
+            return (_sharedRateLimitUntilUtc, _sharedRateLimitUntilUtc - now);
+        }
+    }
+
+    private void ClearSharedRateLimit(DateTimeOffset observedPauseUntil)
+    {
+        if (observedPauseUntil == default)
+            return;
+
+        lock (_rateLimitSync)
+        {
+            if (_sharedRateLimitUntilUtc == observedPauseUntil)
+                _sharedRateLimitUntilUtc = default;
+        }
+    }
+
+    private async ValueTask WaitForSharedRateLimitAsync(
+        CancellationToken cancellationToken = default
+    )
+    {
+        DateTimeOffset observedPauseUntil;
+        TimeSpan delay;
+
+        lock (_rateLimitSync)
+        {
+            observedPauseUntil = _sharedRateLimitUntilUtc;
+            delay = observedPauseUntil - DateTimeOffset.UtcNow;
+        }
+
+        if (delay <= TimeSpan.Zero)
+            return;
+
+        var completed = false;
+        RateLimitChanged?.Invoke(this, new RateLimitState(true, delay));
+        try
+        {
+            await _delayAsync(delay, cancellationToken);
+            completed = true;
+        }
+        finally
+        {
+            if (completed)
+                ClearSharedRateLimit(observedPauseUntil);
+
+            RateLimitChanged?.Invoke(this, new RateLimitState(false, TimeSpan.Zero));
+        }
+    }
+
     private async ValueTask WaitForRateLimitAsync(
         TimeSpan delay,
         CancellationToken cancellationToken
     )
     {
-        RateLimitChanged?.Invoke(this, new RateLimitState(true, delay));
+        var (pauseUntil, effectiveDelay) = ExtendSharedRateLimit(delay);
+        if (effectiveDelay <= TimeSpan.Zero)
+            return;
+
+        var completed = false;
+        RateLimitChanged?.Invoke(this, new RateLimitState(true, effectiveDelay));
         try
         {
-            await _delayAsync(delay, cancellationToken);
+            await _delayAsync(effectiveDelay, cancellationToken);
+            completed = true;
         }
         finally
         {
+            if (completed)
+                ClearSharedRateLimit(pauseUntil);
+
             RateLimitChanged?.Invoke(this, new RateLimitState(false, TimeSpan.Zero));
         }
+    }
+
+    private void RecordInvalidRequestOrThrow(HttpResponseMessage response)
+    {
+        if (
+            response.StatusCode
+            is not (
+                HttpStatusCode.Unauthorized
+                or HttpStatusCode.Forbidden
+                or HttpStatusCode.TooManyRequests
+            )
+        )
+        {
+            return;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        int recentInvalidRequestCount;
+
+        lock (_invalidRequestSync)
+        {
+            while (
+                _invalidRequestTimes.TryPeek(out var oldest)
+                && now - oldest > InvalidRequestCircuitBreakerWindow
+            )
+            {
+                _invalidRequestTimes.Dequeue();
+            }
+
+            _invalidRequestTimes.Enqueue(now);
+            recentInvalidRequestCount = _invalidRequestTimes.Count;
+        }
+
+        if (recentInvalidRequestCount < InvalidRequestCircuitBreakerThreshold)
+            return;
+
+        response.Dispose();
+        throw new DiscordChatExporterException(
+            $"Safety circuit breaker stopped Discord requests after {recentInvalidRequestCount} "
+                + $"HTTP 401/403/429 responses within {InvalidRequestCircuitBreakerWindow.TotalMinutes:0} minutes. "
+                + "Check the token, channel permissions, and rate-limit state before resuming.",
+            true
+        );
     }
 
     private async ValueTask<HttpResponseMessage> GetResponseAsync(
@@ -147,6 +280,8 @@ public class DiscordClient(
             return await Http.ResponseResiliencePipeline.ExecuteAsync(
                 async innerContext =>
                 {
+                    await WaitForSharedRateLimitAsync(innerContext.CancellationToken);
+
                     var requestUri = new Uri(_baseUri, url);
                     var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                     {
@@ -162,30 +297,46 @@ public class DiscordClient(
                         );
                     }
 
+                    var requestGate =
+                        tokenKind == TokenKind.User ? _userRequestGate : _botRequestGate;
+
+                    await requestGate.WaitAsync(innerContext.CancellationToken);
                     HttpResponseMessage response;
-
-                    if (tokenKind == TokenKind.User && _useBrowserTransport && _session is not null)
+                    try
                     {
-                        var cloakResponse = await _session.GetAsync(
-                            requestUri.ToString(),
-                            headers: headers,
-                            cancellationToken: innerContext.CancellationToken
-                        );
+                        if (
+                            tokenKind == TokenKind.User
+                            && _useBrowserTransport
+                            && _session is not null
+                        )
+                        {
+                            var cloakResponse = await _session.GetAsync(
+                                requestUri.ToString(),
+                                headers: headers,
+                                cancellationToken: innerContext.CancellationToken
+                            );
 
-                        response = ToHttpResponseMessage(cloakResponse, requestUri);
+                            response = ToHttpResponseMessage(cloakResponse, requestUri);
+                        }
+                        else
+                        {
+                            using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+                            foreach (var (name, value) in headers)
+                                request.Headers.TryAddWithoutValidation(name, value);
+
+                            response = await _httpClient.SendAsync(
+                                request,
+                                HttpCompletionOption.ResponseHeadersRead,
+                                innerContext.CancellationToken
+                            );
+                        }
                     }
-                    else
+                    finally
                     {
-                        using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
-                        foreach (var (name, value) in headers)
-                            request.Headers.TryAddWithoutValidation(name, value);
-
-                        response = await _httpClient.SendAsync(
-                            request,
-                            HttpCompletionOption.ResponseHeadersRead,
-                            innerContext.CancellationToken
-                        );
+                        requestGate.Release();
                     }
+
+                    RecordInvalidRequestOrThrow(response);
 
                     // Discord has advisory rate limits (communicated via response headers), but
                     // they are typically stricter than the actual server-enforced limits.
@@ -1296,5 +1447,10 @@ public class DiscordClient(
         }
     }
 
-    public void Dispose() => _session?.Dispose();
+    public void Dispose()
+    {
+        _session?.Dispose();
+        _userRequestGate.Dispose();
+        _botRequestGate.Dispose();
+    }
 }

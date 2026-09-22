@@ -34,7 +34,7 @@ param(
     [int]$Parallel = 1,
 
     [ValidateRange(1, 100)]
-    [int]$MaxPartialFailurePasses = 10,
+    [int]$MaxPartialFailurePasses = 3,
 
     [ValidateRange(1, 100)]
     [int]$MaxProcessFailureAttempts = 10,
@@ -145,6 +145,34 @@ function Test-PartialChannelFailure {
 }
 
 
+function Test-PermanentOnlyChannelFailure {
+    param([string]$Text)
+
+    $HasPermanentFailure = (
+        $Text -match '(?i)\bforbidden\b' -or
+        $Text -match '(?i)\bnot found\b' -or
+        $Text -match '(?i)missing access' -or
+        $Text -match '(?i)unknown channel'
+    )
+
+    $HasTransientFailure = (
+        $Text -match '(?i)malformed or truncated JSON' -or
+        $Text -match '(?i)too many requests' -or
+        $Text -match '(?i)rate.?limit' -or
+        $Text -match '(?i)timed? out' -or
+        $Text -match '(?i)temporar' -or
+        $Text -match '(?i)bad gateway' -or
+        $Text -match '(?i)service unavailable' -or
+        $Text -match '(?i)gateway timeout' -or
+        $Text -match '(?i)connection' -or
+        $Text -match '(?i)socket' -or
+        $Text -match '(?i)TLS'
+    )
+
+    return $HasPermanentFailure -and -not $HasTransientFailure
+}
+
+
 # ============================================================================
 # BUILD COMMAND
 # ============================================================================
@@ -154,7 +182,6 @@ $OutputPath = [IO.Path]::TrimEndingDirectorySeparator($OutputDirectory) +
 
 $ExportArgs = @(
     'exportguild',
-    '-t', $Token,
     '-g', $GuildId,
     '--parallel', [string]$Parallel,
     '-f', $Format,
@@ -195,11 +222,26 @@ while ($true) {
     $ErrorFile = Join-Path $env:TEMP "DCE_Resilient_$([Guid]::NewGuid().ToString('N')).stderr.txt"
 
     try {
-        # stdout stays attached directly to the terminal, preserving the native
-        # Spectre.Console in-place progress display.
-        & $DceExe @ExportArgs 2> $ErrorFile
+        # Keep the token out of the child process command line. The CLI natively
+        # accepts DISCORD_TOKEN, so expose it only for the duration of this launch.
+        $PreviousDiscordToken = $env:DISCORD_TOKEN
+        try {
+            $env:DISCORD_TOKEN = $Token
 
-        $ExitCode = $LASTEXITCODE
+            # stdout stays attached directly to the terminal, preserving the native
+            # Spectre.Console in-place progress display.
+            & $DceExe @ExportArgs 2> $ErrorFile
+
+            $ExitCode = $LASTEXITCODE
+        }
+        finally {
+            if ($null -eq $PreviousDiscordToken) {
+                Remove-Item Env:DISCORD_TOKEN -ErrorAction SilentlyContinue
+            }
+            else {
+                $env:DISCORD_TOKEN = $PreviousDiscordToken
+            }
+        }
 
         $ErrorText = ''
         if (Test-Path -LiteralPath $ErrorFile) {
@@ -235,6 +277,17 @@ while ($true) {
 
         if ($ExitCode -eq 0 -and $HasPartialChannelFailures) {
             $PartialFailurePasses++
+
+            if (Test-PermanentOnlyChannelFailure -Text $ErrorText) {
+                Write-Log 'Remaining channel failures appear permanent; not retrying them automatically.'
+
+                Write-Host ''
+                Write-Host 'Completed channels are safely checkpointed in manifest.json.'
+                Write-Host 'The remaining failures look like permission/not-found errors, so this wrapper will not repeatedly request them.'
+                Write-Host ''
+
+                break
+            }
 
             if ($PartialFailurePasses -ge $MaxPartialFailurePasses) {
                 Write-Log "Some channels are still failing after $PartialFailurePasses retry pass(es)."
