@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -29,9 +30,11 @@ public class DiscordClient(
     private const int JsonParseRetryAttempts = 5;
 
     internal const int InvalidRequestCircuitBreakerThreshold = 100;
-    internal const int UserRequestConcurrencyLimit = 4;
+    internal const int UserRequestConcurrencyLimit = 2;
     internal const int BotRequestConcurrencyLimit = 16;
+    internal static readonly TimeSpan UserRequestStartInterval = TimeSpan.FromMilliseconds(250);
     internal static readonly TimeSpan InvalidRequestCircuitBreakerWindow = TimeSpan.FromMinutes(10);
+    internal static readonly TimeSpan AdaptiveRateLimitWindow = TimeSpan.FromMinutes(10);
 
     private const string DisableBrowserTransportEnvironmentVariable =
         "DISCORDCHATEXPORTER_DISABLE_BROWSER_TRANSPORT";
@@ -84,7 +87,11 @@ public class DiscordClient(
     private readonly bool _refreshUserClientBuildNumber = true;
     private readonly object _rateLimitSync = new();
     private readonly object _invalidRequestSync = new();
+    private readonly object _hardRateLimitSync = new();
     private readonly Queue<DateTimeOffset> _invalidRequestTimes = new();
+    private readonly Queue<DateTimeOffset> _hardRateLimitTimes = new();
+    private readonly ConcurrentDictionary<(TokenKind Kind, string Url), HttpStatusCode>
+        _knownUnavailableRequests = new();
     private readonly SemaphoreSlim _userRequestGate = new(
         UserRequestConcurrencyLimit,
         UserRequestConcurrencyLimit
@@ -93,7 +100,14 @@ public class DiscordClient(
         BotRequestConcurrencyLimit,
         BotRequestConcurrencyLimit
     );
+    private readonly SemaphoreSlim _userRequestStartGate = new(1, 1);
+    private TimeSpan _userRequestStartInterval = UserRequestStartInterval;
+    private DateTimeOffset _lastUserRequestStartedUtc;
     private DateTimeOffset _sharedRateLimitUntilUtc;
+    private long _apiRequestCount;
+    private long _avoidedUnavailableRequestCount;
+    private long _hardRateLimitCount;
+    private long _advisoryPauseCount;
     private TokenKind? _resolvedTokenKind;
 
     public event EventHandler<RateLimitState>? RateLimitChanged;
@@ -111,6 +125,7 @@ public class DiscordClient(
         _session = null;
         _useBrowserTransport = false;
         _refreshUserClientBuildNumber = false;
+        _userRequestStartInterval = TimeSpan.Zero;
 
         if (delayAsync is not null)
             _delayAsync = delayAsync;
@@ -223,6 +238,90 @@ public class DiscordClient(
         }
     }
 
+    internal static TimeSpan GetAdaptiveHardRateLimitCushion(int recentRateLimitCount) =>
+        recentRateLimitCount switch
+        {
+            <= 1 => TimeSpan.Zero,
+            2 => TimeSpan.FromSeconds(2),
+            3 => TimeSpan.FromSeconds(5),
+            _ => TimeSpan.FromSeconds(15),
+        };
+
+    private TimeSpan RecordHardRateLimit()
+    {
+        var now = DateTimeOffset.UtcNow;
+        int recentCount;
+
+        lock (_hardRateLimitSync)
+        {
+            while (
+                _hardRateLimitTimes.TryPeek(out var oldest)
+                && now - oldest > AdaptiveRateLimitWindow
+            )
+            {
+                _hardRateLimitTimes.Dequeue();
+            }
+
+            _hardRateLimitTimes.Enqueue(now);
+            recentCount = _hardRateLimitTimes.Count;
+        }
+
+        Interlocked.Increment(ref _hardRateLimitCount);
+        return GetAdaptiveHardRateLimitCushion(recentCount);
+    }
+
+    private async ValueTask WaitForHardRateLimitAsync(
+        TimeSpan delay,
+        CancellationToken cancellationToken
+    )
+    {
+        var cushion = RecordHardRateLimit();
+        await WaitForRateLimitAsync(delay + cushion, cancellationToken);
+    }
+
+    private async ValueTask WaitForUserRequestStartAsync(
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (_userRequestStartInterval <= TimeSpan.Zero)
+            return;
+
+        await _userRequestStartGate.WaitAsync(cancellationToken);
+        try
+        {
+            var now = DateTimeOffset.UtcNow;
+            var remaining =
+                _lastUserRequestStartedUtc + _userRequestStartInterval - now;
+
+            if (remaining > TimeSpan.Zero)
+                await _delayAsync(remaining, cancellationToken);
+
+            _lastUserRequestStartedUtc = DateTimeOffset.UtcNow;
+        }
+        finally
+        {
+            _userRequestStartGate.Release();
+        }
+    }
+
+    private HttpResponseMessage CreateCachedUnavailableResponse(
+        string url,
+        HttpStatusCode statusCode
+    ) =>
+        new(statusCode)
+        {
+            RequestMessage = new HttpRequestMessage(HttpMethod.Get, new Uri(_baseUri, url)),
+            ReasonPhrase = "Cached unavailable response",
+        };
+
+    public DiscordRequestStats GetRequestStats() =>
+        new(
+            Interlocked.Read(ref _apiRequestCount),
+            Interlocked.Read(ref _avoidedUnavailableRequestCount),
+            Interlocked.Read(ref _hardRateLimitCount),
+            Interlocked.Read(ref _advisoryPauseCount)
+        );
+
     private void RecordInvalidRequestOrThrow(HttpResponseMessage response)
     {
         if (
@@ -272,8 +371,17 @@ public class DiscordClient(
         CancellationToken cancellationToken = default
     )
     {
+        if (_knownUnavailableRequests.TryGetValue((tokenKind, url), out var cachedStatusCode))
+        {
+            Interlocked.Increment(ref _avoidedUnavailableRequestCount);
+            return CreateCachedUnavailableResponse(url, cachedStatusCode);
+        }
+
         var resilienceContext = ResilienceContextPool.Shared.Get(cancellationToken);
-        resilienceContext.Properties.Set(Http.RateLimitDelayHandlerKey, WaitForRateLimitAsync);
+        resilienceContext.Properties.Set(
+            Http.RateLimitDelayHandlerKey,
+            WaitForHardRateLimitAsync
+        );
 
         try
         {
@@ -304,6 +412,11 @@ public class DiscordClient(
                     HttpResponseMessage response;
                     try
                     {
+                        if (tokenKind == TokenKind.User)
+                            await WaitForUserRequestStartAsync(innerContext.CancellationToken);
+
+                        Interlocked.Increment(ref _apiRequestCount);
+
                         if (
                             tokenKind == TokenKind.User
                             && _useBrowserTransport
@@ -338,6 +451,17 @@ public class DiscordClient(
 
                     RecordInvalidRequestOrThrow(response);
 
+                    if (
+                        response.StatusCode
+                        is HttpStatusCode.Forbidden or HttpStatusCode.NotFound
+                    )
+                    {
+                        _knownUnavailableRequests.TryAdd(
+                            (tokenKind, url),
+                            response.StatusCode
+                        );
+                    }
+
                     // Discord has advisory rate limits (communicated via response headers), but
                     // they are typically stricter than the actual server-enforced limits.
                     if (
@@ -356,6 +480,8 @@ public class DiscordClient(
 
                         if (remainingRequestCount <= 0 && resetAfterDelay is not null)
                         {
+                            Interlocked.Increment(ref _advisoryPauseCount);
+
                             var delay = (resetAfterDelay.Value + TimeSpan.FromSeconds(1)).Clamp(
                                 TimeSpan.Zero,
                                 TimeSpan.FromSeconds(60)
@@ -1452,5 +1578,6 @@ public class DiscordClient(
         _session?.Dispose();
         _userRequestGate.Dispose();
         _botRequestGate.Dispose();
+        _userRequestStartGate.Dispose();
     }
 }

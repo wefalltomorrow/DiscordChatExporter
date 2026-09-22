@@ -8,8 +8,12 @@ using Gress;
 
 namespace DiscordChatExporter.Core.Exporting;
 
-public class ChannelExporter(DiscordClient discord)
+public class ChannelExporter(DiscordClient discord, ExportCache? cache = null)
 {
+    private readonly ExportCache _cache = cache ?? new ExportCache(discord);
+
+    public long MetadataCacheHitCount => _cache.HitCount;
+
     public async ValueTask<ExportResult> ExportChannelAsync(
         ExportRequest request,
         IProgress<ExportProgress>? progress = null,
@@ -27,8 +31,9 @@ public class ChannelExporter(DiscordClient discord)
             );
         }
 
-        // Build context
-        var context = new ExportContext(discord, request);
+        // Build context. Metadata is shared across all channels exported by this
+        // ChannelExporter so the same guild/member/channel lookups are not repeated.
+        var context = new ExportContext(discord, request, cache: _cache);
         await context.PopulateChannelsAndRolesAsync(cancellationToken);
 
         // Initialize the exporter before further checks to ensure the file is created even if

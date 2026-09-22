@@ -19,11 +19,29 @@ public class RateLimitSpecs
     [Fact]
     public void Archival_request_concurrency_is_conservatively_bounded()
     {
-        DiscordClient.UserRequestConcurrencyLimit.Should().Be(4);
+        DiscordClient.UserRequestConcurrencyLimit.Should().Be(2);
         DiscordClient.BotRequestConcurrencyLimit.Should().Be(16);
+        DiscordClient.UserRequestStartInterval.Should().Be(TimeSpan.FromMilliseconds(250));
         DiscordClient
             .UserRequestConcurrencyLimit.Should()
             .BeLessThan(DiscordClient.BotRequestConcurrencyLimit);
+    }
+
+    [Theory]
+    [InlineData(1, 0)]
+    [InlineData(2, 2)]
+    [InlineData(3, 5)]
+    [InlineData(4, 15)]
+    [InlineData(20, 15)]
+    public void Repeated_hard_rate_limits_add_a_conservative_cooldown(
+        int recentRateLimitCount,
+        int expectedSeconds
+    )
+    {
+        DiscordClient
+            .GetAdaptiveHardRateLimitCushion(recentRateLimitCount)
+            .Should()
+            .Be(TimeSpan.FromSeconds(expectedSeconds));
     }
 
     [Fact]
@@ -317,6 +335,33 @@ public class RateLimitSpecs
         var user = await discord.TryGetUserAsync(Snowflake.Parse("123456789012345678"));
 
         user.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Repeated_unavailable_request_is_suppressed_for_the_rest_of_the_run()
+    {
+        using var httpClient = new HttpClient(
+            new QueueHttpMessageHandler([
+                new HttpResponseMessage(HttpStatusCode.OK),
+                new HttpResponseMessage(HttpStatusCode.NotFound),
+            ])
+        );
+
+        using var discord = new DiscordClient(
+            "test-token",
+            RateLimitPreference.IgnoreAll,
+            httpClient,
+            (_, _) => ValueTask.CompletedTask
+        );
+
+        var userId = Snowflake.Parse("123456789012345678");
+
+        (await discord.TryGetUserAsync(userId)).Should().BeNull();
+        (await discord.TryGetUserAsync(userId)).Should().BeNull();
+
+        var stats = discord.GetRequestStats();
+        stats.RequestCount.Should().Be(2);
+        stats.AvoidedUnavailableRequestCount.Should().Be(1);
     }
 
     [Fact]
