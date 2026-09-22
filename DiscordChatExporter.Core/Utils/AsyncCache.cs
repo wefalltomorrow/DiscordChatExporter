@@ -44,9 +44,7 @@ internal sealed class AsyncCache<TKey, TValue>
         }
         catch
         {
-            _entries.TryRemove(
-                new KeyValuePair<TKey, Lazy<Task<TValue>>>(key, entry)
-            );
+            _entries.TryRemove(new KeyValuePair<TKey, Lazy<Task<TValue>>>(key, entry));
             throw;
         }
     }
