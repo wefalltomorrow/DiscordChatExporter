@@ -8,6 +8,9 @@ reliability, continuation, search, conversion, and user-request transport work f
 forks, while preserving newer upstream fixes such as poll rendering, thread-starter handling, safer
 HTML links, and current media/output-path fixes.
 
+**Current fork status:** `prime` is the finished integration branch. The latest validated build passes
+formatting, CLI tests, GUI tests, Docker, and all 18 Windows/Linux/macOS CLI+GUI packaging targets.
+
 <p align="center">
     <img src="favicon.png" alt="Icon" />
 </p>
@@ -78,15 +81,26 @@ resolution problem. Automatic partial-failure retries are intentionally bounded,
 permission/not-found failures are not hammered repeatedly. The wrapper passes the token to the CLI through
 `DISCORD_TOKEN` rather than placing it in the child process command line.
 
-### Keeping tokens out of command arguments
+### Recommended whole-server archival workflow
 
-The CLI already supports the `DISCORD_TOKEN` environment variable. For local scripts, this keeps the
-token out of the process command line:
+For a single-server export, use the environment variable for the token and native resume/checkpointing:
 
 ```powershell
 $env:DISCORD_TOKEN = "your-token"
-.\DiscordChatExporter.Cli.exe exportguild -g 123456789012345678 --resume
+.\DiscordChatExporter.Cli.exe exportguild -g 123456789012345678 --resume -f Json -o "C:\Discord Exports"
 ```
+
+User-token Discord API traffic is serialized internally, so increasing channel-level `--parallel`
+does not create simultaneous user-token API requests. The exporter intentionally favors quiet,
+low-impact archival traffic over maximum throughput.
+
+For especially long exports, `scripts/Export-Guild-Resilient.ps1` adds bounded process-level retries
+around the same native `exportguild --resume` workflow.
+
+### Keeping tokens out of command arguments
+
+The CLI supports the `DISCORD_TOKEN` environment variable. This keeps the token out of the process
+command line, and the resilient PowerShell wrapper uses the same mechanism for child processes.
 
 The `-t|--token` option remains supported for compatibility.
 
@@ -101,7 +115,23 @@ The `-t|--token` option remains supported for compatibility.
 
 ## Download
 
-Builds and releases for this fork are published under:
+### Latest validated builds
+
+Every successful `prime` build publishes self-contained CLI and GUI artifacts for:
+
+- Windows: x64, x86, ARM64
+- Linux: x64, musl-x64, ARM, ARM64
+- macOS: Intel x64, Apple Silicon ARM64
+
+Get the newest validated artifacts from the latest successful **main** workflow run:
+
+**https://github.com/wefalltomorrow/DiscordChatExporter/actions/workflows/main.yml?query=branch%3Aprime**
+
+GitHub Actions artifacts are retained by GitHub for a limited period.
+
+### Tagged releases
+
+Formal tagged releases, when published, appear at:
 
 **https://github.com/wefalltomorrow/DiscordChatExporter/releases**
 
@@ -142,6 +172,9 @@ This fork also incorporates/adapts work from:
   and extensive reliability/hardening work.
 - [nulldg/DiscordChatExporterPlus](https://github.com/nulldg/DiscordChatExporterPlus) — HttpCloak
   browser/TLS transport work.
+- [edelkas/DiscordChatExporter](https://github.com/edelkas/DiscordChatExporter) — inspiration/reference
+  for shared export metadata caching and additional archival/export improvements selectively reviewed
+  for this fork.
 - [Tyrrrz/DiscordChatExporter PR #1582](https://github.com/Tyrrrz/DiscordChatExporter/pull/1582) and
   the earlier client-properties work it builds on.
 
