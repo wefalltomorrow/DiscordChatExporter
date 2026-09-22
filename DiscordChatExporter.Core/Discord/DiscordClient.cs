@@ -451,10 +451,7 @@ public class DiscordClient(
 
                     if (response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.NotFound)
                     {
-                        _knownUnavailableRequests.TryAdd(
-                            (tokenKind, url),
-                            response.StatusCode
-                        );
+                        _knownUnavailableRequests.TryAdd((tokenKind, url), response.StatusCode);
                     }
 
                     // Discord has advisory rate limits (communicated via response headers), but
