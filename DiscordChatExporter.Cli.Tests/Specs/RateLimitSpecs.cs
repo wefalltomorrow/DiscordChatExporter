@@ -21,7 +21,9 @@ public class RateLimitSpecs
     {
         DiscordClient.UserRequestConcurrencyLimit.Should().Be(4);
         DiscordClient.BotRequestConcurrencyLimit.Should().Be(16);
-        DiscordClient.UserRequestConcurrencyLimit.Should().BeLessThan(DiscordClient.BotRequestConcurrencyLimit);
+        DiscordClient
+            .UserRequestConcurrencyLimit.Should()
+            .BeLessThan(DiscordClient.BotRequestConcurrencyLimit);
     }
 
     [Fact]
