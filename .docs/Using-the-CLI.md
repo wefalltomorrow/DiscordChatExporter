@@ -243,6 +243,18 @@ To export all channels in a specific server, use the `exportguild` command and p
 ./DiscordChatExporter.Cli exportguild -t "mfa.Ifrn" -g 21814
 ```
 
+For long archival exports, prefer `DISCORD_TOKEN` plus `--resume` so the token is not present in the
+command line and completed channels are checkpointed:
+
+```powershell
+$env:DISCORD_TOKEN = "your-token"
+.\DiscordChatExporter.Cli.exe exportguild -g 21814 --resume -f Json -o "C:\Discord Exports"
+```
+
+This fork serializes user-token Discord API traffic internally and spaces request starts conservatively.
+Channel-level parallelism can still overlap local export work, but it does not create simultaneous
+user-token Discord API requests.
+
 #### Resuming interrupted multi-channel exports
 
 For long whole-server or multi-channel exports, use `--resume` to enable per-channel checkpointing.
