@@ -1,0 +1,224 @@
+name: fork-release
+
+on:
+  push:
+    branches:
+      - "release/**"
+
+concurrency:
+  group: fork-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  meta:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Resolve release version
+        id: version
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#release/}"
+
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Release branch must be named release/<semver>, e.g. release/2.48.0-bestofall.1"
+            exit 1
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Release version: $version"
+
+  format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      - name: Build
+        run: dotnet build -p:CSharpier_Bypass=true --configuration Release
+      - name: Verify formatting
+        run: dotnet build -t:CSharpierFormat --configuration Release --no-restore
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      - name: Run token-free CLI tests
+        run: >
+          dotnet test DiscordChatExporter.Cli.Tests
+          -p:CSharpier_Bypass=true
+          --configuration Release
+          --filter "FullyQualifiedName~ClientPropertiesSpecs|FullyQualifiedName~JsonRetrySpecs|FullyQualifiedName~Conversion|FullyQualifiedName~Continuation|FullyQualifiedName~Manifest|FullyQualifiedName~EtaEstimatorSpecs|FullyQualifiedName~ExportProgressSpecs|FullyQualifiedName~ExportFormatSpecs|FullyQualifiedName~ExportSummarizerSpecs|FullyQualifiedName~ExportCatalogBuilderSpecs|FullyQualifiedName~ExportContextAssetSpecs|FullyQualifiedName~DiscordDataParsingSpecs|FullyQualifiedName~DiscordClientMessageRangeSpecs|FullyQualifiedName~RateLimitSpecs|FullyQualifiedName~CountMessagesParsingSpecs|FullyQualifiedName~MessageCountEstimatorSpecs|FullyQualifiedName~MessageFilterFactorySpecs|FullyQualifiedName~RecentExportDirsSpecs|FullyQualifiedName~SqliteMessageWriterSpecs|FullyQualifiedName~SqliteExportReaderSpecs"
+          --logger "GitHubActions;summary.includePassedTests=true;summary.includeSkippedTests=true"
+      - name: Run GUI tests
+        run: >
+          dotnet test DiscordChatExporter.Gui.Tests
+          -p:CSharpier_Bypass=true
+          --configuration Release
+
+  pack:
+    needs: meta
+    strategy:
+      matrix:
+        app:
+          - DiscordChatExporter.Cli
+          - DiscordChatExporter.Gui
+        rid:
+          - win-arm64
+          - win-x86
+          - win-x64
+          - linux-arm
+          - linux-arm64
+          - linux-musl-x64
+          - linux-x64
+          - osx-arm64
+          - osx-x64
+        include:
+          - app: DiscordChatExporter.Cli
+            asset: DiscordChatExporter.Cli
+          - app: DiscordChatExporter.Gui
+            asset: DiscordChatExporter
+    runs-on: ${{ startsWith(matrix.rid, 'win-') && 'windows-latest' || startsWith(matrix.rid, 'osx-') && 'macos-latest' || 'ubuntu-latest' }}
+    timeout-minutes: 12
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      - name: Publish app
+        run: >
+          dotnet publish ${{ matrix.app }}
+          -p:Version=${{ needs.meta.outputs.version }}
+          -p:CSharpier_Bypass=true
+          -p:EncryptionSalt=${{ secrets.ENCRYPTION_SALT || 'HimalayanPinkSalt' }}
+          --output ${{ matrix.app }}/bin/publish/
+          --configuration Release
+          --runtime ${{ matrix.rid }}
+          --self-contained
+      - name: Rename macOS bundle
+        if: ${{ startsWith(matrix.rid, 'osx-') && matrix.app == 'DiscordChatExporter.Gui' }}
+        run: mv ${{ matrix.app }}/bin/publish/DCE.app ${{ matrix.app }}/bin/publish/${{ matrix.asset }}.app
+      - name: Prepare release payload
+        shell: pwsh
+        run: |
+          $publishDir = Join-Path '${{ matrix.app }}' 'bin/publish'
+          Get-ChildItem -LiteralPath $publishDir -Recurse -Filter '*.pdb' -File | Remove-Item -Force
+          Copy-Item -LiteralPath 'License.txt' -Destination (Join-Path $publishDir 'License.txt') -Force
+          Copy-Item -LiteralPath 'NOTICE' -Destination (Join-Path $publishDir 'NOTICE') -Force
+      - name: Upload app binaries
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ matrix.asset }}.${{ matrix.rid }}
+          path: ${{ matrix.app }}/bin/publish/
+          if-no-files-found: error
+
+  release:
+    needs:
+      - meta
+      - format
+      - test
+      - pack
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.meta.outputs.version }}
+        shell: bash
+        run: |
+          cat > release-notes.md <<'EOF'
+          ## DiscordChatExporter — Best-of-All Fork
+
+          First formal release of the consolidated fork.
+
+          Highlights:
+          - resumable/checkpointed whole-server exports
+          - malformed/truncated JSON recovery
+          - SQLite export, library search, and offline conversion
+          - conservative user-token request pacing and coordinated rate-limit handling
+          - shared per-run metadata caching and duplicate-request suppression
+          - bounded retries and permanent-failure handling
+          - Windows browser-compatible transport for user-token requests
+          - cross-platform self-contained CLI and GUI builds
+
+          For long single-server archival exports, see the README's recommended `DISCORD_TOKEN` + `exportguild --resume` workflow.
+
+          This is a fork-specific release and is not an official Tyrrrz upstream release.
+          EOF
+
+          gh release create "$VERSION"             --repo "${GITHUB_REPOSITORY}"             --target "${GITHUB_SHA}"             --title "DiscordChatExporter Best-of-All $VERSION"             --notes-file release-notes.md
+
+  deploy:
+    needs:
+      - meta
+      - release
+      - pack
+    strategy:
+      matrix:
+        app:
+          - DiscordChatExporter.Cli
+          - DiscordChatExporter.Gui
+        rid:
+          - win-arm64
+          - win-x86
+          - win-x64
+          - linux-arm
+          - linux-arm64
+          - linux-musl-x64
+          - linux-x64
+          - osx-arm64
+          - osx-x64
+        include:
+          - app: DiscordChatExporter.Cli
+            asset: DiscordChatExporter.Cli
+          - app: DiscordChatExporter.Gui
+            asset: DiscordChatExporter
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Download app binaries
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ matrix.asset }}.${{ matrix.rid }}
+          path: ${{ matrix.app }}/
+      - name: Set permissions
+        if: ${{ !startsWith(matrix.rid, 'win-') }}
+        run: |
+          [ -f ${{ matrix.app }}/${{ matrix.asset }} ] && chmod +x ${{ matrix.app }}/${{ matrix.asset }} || true
+          [ -f ${{ matrix.app }}/${{ matrix.asset }}.app/Contents/MacOS/${{ matrix.asset }} ] && chmod +x ${{ matrix.app }}/${{ matrix.asset }}.app/Contents/MacOS/${{ matrix.asset }} || true
+      - name: Create package
+        working-directory: ${{ matrix.app }}/
+        run: zip -r ../${{ matrix.asset }}.${{ matrix.rid }}.zip .
+      - name: Upload release asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: >
+          gh release upload "$VERSION"
+          ${{ matrix.asset }}.${{ matrix.rid }}.zip
+          --repo "${GITHUB_REPOSITORY}"
+          --clobber
