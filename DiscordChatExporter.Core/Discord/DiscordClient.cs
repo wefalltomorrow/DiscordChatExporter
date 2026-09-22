@@ -449,10 +449,7 @@ public class DiscordClient(
 
                     RecordInvalidRequestOrThrow(response);
 
-                    if (
-                        response.StatusCode
-                        is HttpStatusCode.Forbidden or HttpStatusCode.NotFound
-                    )
+                    if (response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.NotFound)
                     {
                         _knownUnavailableRequests.TryAdd(
                             (tokenKind, url),
