@@ -148,21 +148,21 @@ jobs:
         shell: bash
         run: |
           cat > release-notes.md <<'EOF'
-          This is my maintained fork of DiscordChatExporter, built mainly around reliable long-running server exports.
+          Maintained fork of DiscordChatExporter focused on resilient long-running exports, conservative Discord API usage, and improved archive/search tooling.
 
-          Main changes:
-          - resumable/checkpointed whole-server exports
-          - much more conservative user-token request pacing and rate-limit handling
-          - shared metadata caching to cut down duplicate Discord requests
-          - malformed/truncated JSON recovery without restarting a whole channel
-          - SQLite export, library search and offline conversion
+          Included in this release:
+          - resumable and checkpointed whole-server exports
+          - conservative user-token request pacing and coordinated rate-limit handling
+          - shared metadata caching and duplicate-request suppression
+          - request-level recovery for malformed or truncated Discord JSON
+          - SQLite export, full-text search, library support, and offline conversion
           - bounded retries and permanent-failure handling
           - Windows user-token browser/TLS transport
-          - self-contained CLI and GUI builds for Windows, Linux and macOS
+          - self-contained CLI and GUI builds for Windows, Linux, and macOS
 
-          If you're using the CLI for a long server export, the README has the exact `DISCORD_TOKEN` + `exportguild --resume` command I recommend.
+          See the README for recommended CLI usage and the full list of changes.
 
-          Based on upstream DiscordChatExporter by Tyrrrz, with selected work from other community forks. Full credits are in the README and NOTICE.
+          Based on upstream DiscordChatExporter by Tyrrrz, with selected work from other community forks. Full credits are available in the README and NOTICE.
           EOF
 
           gh release create "$VERSION"             --repo "${GITHUB_REPOSITORY}"             --target "${GITHUB_SHA}"             --title "DiscordChatExporter $VERSION"             --notes-file release-notes.md
