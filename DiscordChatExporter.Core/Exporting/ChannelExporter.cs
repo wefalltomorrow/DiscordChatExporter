@@ -8,9 +8,22 @@ using Gress;
 
 namespace DiscordChatExporter.Core.Exporting;
 
-public class ChannelExporter(DiscordClient discord, ExportCache? cache = null)
+public class ChannelExporter
 {
-    private readonly ExportCache _cache = cache ?? new ExportCache(discord);
+    private readonly DiscordClient _discord;
+    private readonly ExportCache _cache;
+
+    public ChannelExporter(DiscordClient discord)
+    {
+        _discord = discord;
+        _cache = new ExportCache(discord);
+    }
+
+    internal ChannelExporter(DiscordClient discord, ExportCache cache)
+    {
+        _discord = discord;
+        _cache = cache;
+    }
 
     public long MetadataCacheHitCount => _cache.HitCount;
 
@@ -33,7 +46,7 @@ public class ChannelExporter(DiscordClient discord, ExportCache? cache = null)
 
         // Build context. Metadata is shared across all channels exported by this
         // ChannelExporter so the same guild/member/channel lookups are not repeated.
-        var context = new ExportContext(discord, request, cache: _cache);
+        var context = new ExportContext(_discord, request, cache: _cache);
         await context.PopulateChannelsAndRolesAsync(cancellationToken);
 
         // Initialize the exporter before further checks to ensure the file is created even if
@@ -74,14 +87,14 @@ public class ChannelExporter(DiscordClient discord, ExportCache? cache = null)
             var progressState = new ExportProgressState();
 
             var messages = !request.IsReverseMessageOrder
-                ? discord.GetMessagesAsync(
+                ? _discord.GetMessagesAsync(
                     request.Channel.Id,
                     request.After,
                     request.Before,
                     progressState,
                     cancellationToken
                 )
-                : discord.GetMessagesInReverseAsync(
+                : _discord.GetMessagesInReverseAsync(
                     request.Channel.Id,
                     request.After,
                     request.Before,
