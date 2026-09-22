@@ -103,8 +103,8 @@ internal sealed class ExportCache(DiscordClient discord)
                 if (member is not null)
                     return member;
 
-                var user = fallbackUser
-                    ?? await discord.TryGetUserAsync(key.Item2, cancellationToken);
+                var user =
+                    fallbackUser ?? await discord.TryGetUserAsync(key.Item2, cancellationToken);
 
                 return user is not null ? Member.CreateFallback(user) : null;
             }
