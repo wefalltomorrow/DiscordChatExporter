@@ -100,7 +100,7 @@ public class RateLimitSpecs
         var user = await discord.TryGetUserAsync(Snowflake.Parse("123456789012345678"));
 
         user.Should().NotBeNull();
-        observedDelays.Should().ContainSingle().Which.Should().Be(TimeSpan.FromSeconds(3.5));
+        observedDelays.Should().ContainSingle().Which.Should().Be(TimeSpan.FromSeconds(8.5));
     }
 
     [Fact]
@@ -145,7 +145,7 @@ public class RateLimitSpecs
         states
             .Should()
             .Equal(
-                new RateLimitState(true, TimeSpan.FromSeconds(1)),
+                new RateLimitState(true, TimeSpan.FromSeconds(6)),
                 new RateLimitState(false, TimeSpan.Zero)
             );
     }
@@ -196,7 +196,7 @@ public class RateLimitSpecs
         states
             .Should()
             .Equal(
-                new RateLimitState(true, TimeSpan.FromSeconds(1)),
+                new RateLimitState(true, TimeSpan.FromSeconds(6)),
                 new RateLimitState(false, TimeSpan.Zero)
             );
     }
