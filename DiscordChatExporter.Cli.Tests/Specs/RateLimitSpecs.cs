@@ -17,6 +17,14 @@ namespace DiscordChatExporter.Cli.Tests.Specs;
 public class RateLimitSpecs
 {
     [Fact]
+    public void Archival_request_concurrency_is_conservatively_bounded()
+    {
+        DiscordClient.UserRequestConcurrencyLimit.Should().Be(4);
+        DiscordClient.BotRequestConcurrencyLimit.Should().Be(16);
+        DiscordClient.UserRequestConcurrencyLimit.Should().BeLessThan(DiscordClient.BotRequestConcurrencyLimit);
+    }
+
+    [Fact]
     public void User_token_advisory_limits_cannot_be_disabled()
     {
         RateLimitPreference.IgnoreAll.IsRespectedFor(TokenKind.User).Should().BeTrue();
