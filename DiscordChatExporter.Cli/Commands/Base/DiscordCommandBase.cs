@@ -29,17 +29,19 @@ public abstract class DiscordCommandBase : ICommand
 
     [CommandOption(
         "respect-rate-limits",
-        Description = "Whether to respect advisory rate limits. "
-            + "If disabled, only hard rate limits (i.e., 429 responses) will be respected."
+        Description = "Whether to respect advisory rate limits for bot-token requests. "
+            + "User-token requests always respect advisory limits; hard rate limits (i.e., 429 responses) are always respected."
     )]
     public bool ShouldRespectRateLimits { get; set; } = true;
 
+    internal static RateLimitPreference GetRateLimitPreference(bool shouldRespectRateLimits) =>
+        shouldRespectRateLimits
+            ? RateLimitPreference.RespectAll
+            : RateLimitPreference.RespectForUserTokens;
+
     [field: AllowNull, MaybeNull]
     protected DiscordClient Discord =>
-        field ??= new DiscordClient(
-            Token,
-            ShouldRespectRateLimits ? RateLimitPreference.RespectAll : RateLimitPreference.IgnoreAll
-        );
+        field ??= new DiscordClient(Token, GetRateLimitPreference(ShouldRespectRateLimits));
 
     public virtual ValueTask ExecuteAsync(IConsole console)
     {

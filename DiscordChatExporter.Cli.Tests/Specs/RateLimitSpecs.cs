@@ -6,6 +6,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using DiscordChatExporter.Cli.Commands.Base;
 using DiscordChatExporter.Core.Discord;
 using DiscordChatExporter.Core.Discord.Data;
 using DiscordChatExporter.Core.Exceptions;
@@ -16,6 +17,69 @@ namespace DiscordChatExporter.Cli.Tests.Specs;
 
 public class RateLimitSpecs
 {
+    [Fact]
+    public void Cli_rate_limit_opt_out_still_respects_user_token_advisory_limits()
+    {
+        DiscordCommandBase
+            .GetRateLimitPreference(false)
+            .Should()
+            .Be(RateLimitPreference.RespectForUserTokens);
+
+        RateLimitPreference.IgnoreAll.IsRespectedFor(TokenKind.User).Should().BeTrue();
+        RateLimitPreference.IgnoreAll.IsRespectedFor(TokenKind.Bot).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Uses_discord_json_retry_after_when_429_header_is_missing()
+    {
+        var observedDelays = new List<TimeSpan>();
+        using var httpClient = new HttpClient(
+            new QueueHttpMessageHandler([
+                new HttpResponseMessage(HttpStatusCode.OK),
+                new HttpResponseMessage(HttpStatusCode.TooManyRequests)
+                {
+                    Content = new StringContent(
+                        """{"retry_after":2.5,"global":false}""",
+                        Encoding.UTF8,
+                        "application/json"
+                    ),
+                },
+                new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        """
+                        {
+                          "id": "123456789012345678",
+                          "username": "test-user",
+                          "global_name": "Test User",
+                          "discriminator": "0",
+                          "avatar": null
+                        }
+                        """,
+                        Encoding.UTF8,
+                        "application/json"
+                    ),
+                },
+            ])
+        );
+
+        var discord = new DiscordClient(
+            "test-token",
+            RateLimitPreference.IgnoreAll,
+            httpClient,
+            (delay, _) =>
+            {
+                observedDelays.Add(delay);
+                return ValueTask.CompletedTask;
+            }
+        );
+
+        var user = await discord.TryGetUserAsync(Snowflake.Parse("123456789012345678"));
+
+        user.Should().NotBeNull();
+        observedDelays.Should().ContainSingle().Which.Should().Be(TimeSpan.FromSeconds(3.5));
+    }
+
     [Fact]
     public async Task Emits_rate_limit_events_for_retry_after_429_when_advisory_limits_are_disabled()
     {

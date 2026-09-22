@@ -33,6 +33,10 @@ servers to portable files, with support for Discord markdown and rich media.
 - **Per-channel fault isolation** so a recoverable failure in one channel does not tear down an entire
   multi-channel run.
 - **Cancellation controls, completion summaries, rate-limit status, count-backed progress, and ETA**.
+- **Shared client-wide rate-limit coordination** so concurrent export workers honor the same Discord pause.
+- **429 retry timing from Discord's JSON `retry_after` response**, with header/exponential fallbacks.
+- **Invalid-request safety circuit breaker** that stops a run after an abnormal burst of HTTP 401/403/429 responses.
+- User-token requests **always respect Discord's advisory rate-limit headers**, even if advisory limits are disabled for bot-token testing.
 
 ### Better archives
 
@@ -63,7 +67,20 @@ These changes improve request consistency; they are not a guarantee against acco
 `scripts/Export-Guild-Resilient.ps1` wraps the native `exportguild --resume` workflow. It preserves the
 CLI's normal in-place progress display, uses `manifest.json` checkpoints to skip verified completed
 channels, automatically retries unfinished channels, and avoids the old per-channel `/channels/{id}`
-resolution problem.
+resolution problem. Automatic partial-failure retries are intentionally bounded, and clearly permanent
+permission/not-found failures are not hammered repeatedly.
+
+### Keeping tokens out of command arguments
+
+The CLI already supports the `DISCORD_TOKEN` environment variable. For local scripts, this keeps the
+token out of the process command line:
+
+```powershell
+$env:DISCORD_TOKEN = "your-token"
+.\DiscordChatExporter.Cli.exe exportguild -g 123456789012345678 --resume
+```
+
+The `-t|--token` option remains supported for compatibility.
 
 ## Formats
 

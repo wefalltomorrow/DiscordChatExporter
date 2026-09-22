@@ -46,6 +46,18 @@ Type the following command in your terminal of choice, then press ENTER to run i
 
 To use the commands, you'll need a token. For the instructions on how to get a token, please refer to [this page](Token-and-IDs.md), or run `./DiscordChatExporter.Cli guide`.
 
+The CLI accepts the token through `-t|--token` or the `DISCORD_TOKEN` environment variable. For local
+scripts, the environment variable keeps the token out of the process command line:
+
+```powershell
+$env:DISCORD_TOKEN = "your-token"
+.\DiscordChatExporter.Cli.exe exportguild -g 21814 --resume
+```
+
+User-token requests always respect Discord's advisory rate-limit headers. The
+`--respect-rate-limits false` compatibility option only disables advisory handling for bot-token
+requests; HTTP 429 responses are always respected.
+
 To get help with a specific command, run:
 
 ```console

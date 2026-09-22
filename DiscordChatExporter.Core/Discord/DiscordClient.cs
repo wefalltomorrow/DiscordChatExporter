@@ -28,6 +28,9 @@ public class DiscordClient(
 {
     private const int JsonParseRetryAttempts = 5;
 
+    internal const int InvalidRequestCircuitBreakerThreshold = 100;
+    internal static readonly TimeSpan InvalidRequestCircuitBreakerWindow = TimeSpan.FromMinutes(10);
+
     private const string DisableBrowserTransportEnvironmentVariable =
         "DISCORDCHATEXPORTER_DISABLE_BROWSER_TRANSPORT";
 
@@ -77,6 +80,10 @@ public class DiscordClient(
     ) => new ValueTask(Task.Delay(delay, cancellationToken));
     private readonly bool _useBrowserTransport = IsBrowserTransportSupported;
     private readonly bool _refreshUserClientBuildNumber = true;
+    private readonly object _rateLimitSync = new();
+    private readonly object _invalidRequestSync = new();
+    private readonly Queue<DateTimeOffset> _invalidRequestTimes = new();
+    private DateTimeOffset _sharedRateLimitUntilUtc;
     private TokenKind? _resolvedTokenKind;
 
     public event EventHandler<RateLimitState>? RateLimitChanged;
@@ -117,20 +124,107 @@ public class DiscordClient(
         return response;
     }
 
+    private void ExtendSharedRateLimit(TimeSpan delay)
+    {
+        if (delay <= TimeSpan.Zero)
+            return;
+
+        var pauseUntil = DateTimeOffset.UtcNow + delay;
+        lock (_rateLimitSync)
+        {
+            if (pauseUntil > _sharedRateLimitUntilUtc)
+                _sharedRateLimitUntilUtc = pauseUntil;
+        }
+    }
+
+    private async ValueTask WaitForSharedRateLimitAsync(
+        CancellationToken cancellationToken = default
+    )
+    {
+        DateTimeOffset observedPauseUntil;
+        TimeSpan delay;
+
+        lock (_rateLimitSync)
+        {
+            observedPauseUntil = _sharedRateLimitUntilUtc;
+            delay = observedPauseUntil - DateTimeOffset.UtcNow;
+        }
+
+        if (delay <= TimeSpan.Zero)
+            return;
+
+        var completed = false;
+        RateLimitChanged?.Invoke(this, new RateLimitState(true, delay));
+        try
+        {
+            await _delayAsync(delay, cancellationToken);
+            completed = true;
+        }
+        finally
+        {
+            if (completed)
+            {
+                lock (_rateLimitSync)
+                {
+                    if (_sharedRateLimitUntilUtc == observedPauseUntil)
+                        _sharedRateLimitUntilUtc = default;
+                }
+            }
+
+            RateLimitChanged?.Invoke(this, new RateLimitState(false, TimeSpan.Zero));
+        }
+    }
+
     private async ValueTask WaitForRateLimitAsync(
         TimeSpan delay,
         CancellationToken cancellationToken
     )
     {
-        RateLimitChanged?.Invoke(this, new RateLimitState(true, delay));
-        try
+        ExtendSharedRateLimit(delay);
+        await WaitForSharedRateLimitAsync(cancellationToken);
+    }
+
+    private void RecordInvalidRequestOrThrow(HttpResponseMessage response)
+    {
+        if (
+            response.StatusCode
+            is not (
+                HttpStatusCode.Unauthorized
+                or HttpStatusCode.Forbidden
+                or HttpStatusCode.TooManyRequests
+            )
+        )
         {
-            await _delayAsync(delay, cancellationToken);
+            return;
         }
-        finally
+
+        var now = DateTimeOffset.UtcNow;
+        int recentInvalidRequestCount;
+
+        lock (_invalidRequestSync)
         {
-            RateLimitChanged?.Invoke(this, new RateLimitState(false, TimeSpan.Zero));
+            while (
+                _invalidRequestTimes.TryPeek(out var oldest)
+                && now - oldest > InvalidRequestCircuitBreakerWindow
+            )
+            {
+                _invalidRequestTimes.Dequeue();
+            }
+
+            _invalidRequestTimes.Enqueue(now);
+            recentInvalidRequestCount = _invalidRequestTimes.Count;
         }
+
+        if (recentInvalidRequestCount < InvalidRequestCircuitBreakerThreshold)
+            return;
+
+        response.Dispose();
+        throw new DiscordChatExporterException(
+            $"Safety circuit breaker stopped Discord requests after {recentInvalidRequestCount} "
+                + $"HTTP 401/403/429 responses within {InvalidRequestCircuitBreakerWindow.TotalMinutes:0} minutes. "
+                + "Check the token, channel permissions, and rate-limit state before resuming.",
+            true
+        );
     }
 
     private async ValueTask<HttpResponseMessage> GetResponseAsync(
@@ -147,6 +241,8 @@ public class DiscordClient(
             return await Http.ResponseResiliencePipeline.ExecuteAsync(
                 async innerContext =>
                 {
+                    await WaitForSharedRateLimitAsync(innerContext.CancellationToken);
+
                     var requestUri = new Uri(_baseUri, url);
                     var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                     {
@@ -186,6 +282,8 @@ public class DiscordClient(
                             innerContext.CancellationToken
                         );
                     }
+
+                    RecordInvalidRequestOrThrow(response);
 
                     // Discord has advisory rate limits (communicated via response headers), but
                     // they are typically stricter than the actual server-enforced limits.
