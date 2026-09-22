@@ -182,7 +182,6 @@ $OutputPath = [IO.Path]::TrimEndingDirectorySeparator($OutputDirectory) +
 
 $ExportArgs = @(
     'exportguild',
-    '-t', $Token,
     '-g', $GuildId,
     '--parallel', [string]$Parallel,
     '-f', $Format,
@@ -223,11 +222,26 @@ while ($true) {
     $ErrorFile = Join-Path $env:TEMP "DCE_Resilient_$([Guid]::NewGuid().ToString('N')).stderr.txt"
 
     try {
-        # stdout stays attached directly to the terminal, preserving the native
-        # Spectre.Console in-place progress display.
-        & $DceExe @ExportArgs 2> $ErrorFile
+        # Keep the token out of the child process command line. The CLI natively
+        # accepts DISCORD_TOKEN, so expose it only for the duration of this launch.
+        $PreviousDiscordToken = $env:DISCORD_TOKEN
+        try {
+            $env:DISCORD_TOKEN = $Token
 
-        $ExitCode = $LASTEXITCODE
+            # stdout stays attached directly to the terminal, preserving the native
+            # Spectre.Console in-place progress display.
+            & $DceExe @ExportArgs 2> $ErrorFile
+
+            $ExitCode = $LASTEXITCODE
+        }
+        finally {
+            if ($null -eq $PreviousDiscordToken) {
+                Remove-Item Env:DISCORD_TOKEN -ErrorAction SilentlyContinue
+            }
+            else {
+                $env:DISCORD_TOKEN = $PreviousDiscordToken
+            }
+        }
 
         $ErrorText = ''
         if (Test-Path -LiteralPath $ErrorFile) {

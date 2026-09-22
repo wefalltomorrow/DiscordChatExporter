@@ -29,6 +29,8 @@ public class DiscordClient(
     private const int JsonParseRetryAttempts = 5;
 
     internal const int InvalidRequestCircuitBreakerThreshold = 100;
+    internal const int UserRequestConcurrencyLimit = 4;
+    internal const int BotRequestConcurrencyLimit = 16;
     internal static readonly TimeSpan InvalidRequestCircuitBreakerWindow = TimeSpan.FromMinutes(10);
 
     private const string DisableBrowserTransportEnvironmentVariable =
@@ -83,6 +85,14 @@ public class DiscordClient(
     private readonly object _rateLimitSync = new();
     private readonly object _invalidRequestSync = new();
     private readonly Queue<DateTimeOffset> _invalidRequestTimes = new();
+    private readonly SemaphoreSlim _userRequestGate = new(
+        UserRequestConcurrencyLimit,
+        UserRequestConcurrencyLimit
+    );
+    private readonly SemaphoreSlim _botRequestGate = new(
+        BotRequestConcurrencyLimit,
+        BotRequestConcurrencyLimit
+    );
     private DateTimeOffset _sharedRateLimitUntilUtc;
     private TokenKind? _resolvedTokenKind;
 
@@ -124,16 +134,35 @@ public class DiscordClient(
         return response;
     }
 
-    private void ExtendSharedRateLimit(TimeSpan delay)
+    private (DateTimeOffset PauseUntil, TimeSpan Delay) ExtendSharedRateLimit(TimeSpan delay)
     {
         if (delay <= TimeSpan.Zero)
-            return;
+            return (default, TimeSpan.Zero);
 
-        var pauseUntil = DateTimeOffset.UtcNow + delay;
+        var now = DateTimeOffset.UtcNow;
+        var requestedPauseUntil = now + delay;
+
         lock (_rateLimitSync)
         {
-            if (pauseUntil > _sharedRateLimitUntilUtc)
-                _sharedRateLimitUntilUtc = pauseUntil;
+            if (requestedPauseUntil >= _sharedRateLimitUntilUtc)
+            {
+                _sharedRateLimitUntilUtc = requestedPauseUntil;
+                return (_sharedRateLimitUntilUtc, delay);
+            }
+
+            return (_sharedRateLimitUntilUtc, _sharedRateLimitUntilUtc - now);
+        }
+    }
+
+    private void ClearSharedRateLimit(DateTimeOffset observedPauseUntil)
+    {
+        if (observedPauseUntil == default)
+            return;
+
+        lock (_rateLimitSync)
+        {
+            if (_sharedRateLimitUntilUtc == observedPauseUntil)
+                _sharedRateLimitUntilUtc = default;
         }
     }
 
@@ -163,13 +192,7 @@ public class DiscordClient(
         finally
         {
             if (completed)
-            {
-                lock (_rateLimitSync)
-                {
-                    if (_sharedRateLimitUntilUtc == observedPauseUntil)
-                        _sharedRateLimitUntilUtc = default;
-                }
-            }
+                ClearSharedRateLimit(observedPauseUntil);
 
             RateLimitChanged?.Invoke(this, new RateLimitState(false, TimeSpan.Zero));
         }
@@ -180,8 +203,24 @@ public class DiscordClient(
         CancellationToken cancellationToken
     )
     {
-        ExtendSharedRateLimit(delay);
-        await WaitForSharedRateLimitAsync(cancellationToken);
+        var (pauseUntil, effectiveDelay) = ExtendSharedRateLimit(delay);
+        if (effectiveDelay <= TimeSpan.Zero)
+            return;
+
+        var completed = false;
+        RateLimitChanged?.Invoke(this, new RateLimitState(true, effectiveDelay));
+        try
+        {
+            await _delayAsync(effectiveDelay, cancellationToken);
+            completed = true;
+        }
+        finally
+        {
+            if (completed)
+                ClearSharedRateLimit(pauseUntil);
+
+            RateLimitChanged?.Invoke(this, new RateLimitState(false, TimeSpan.Zero));
+        }
     }
 
     private void RecordInvalidRequestOrThrow(HttpResponseMessage response)
@@ -258,29 +297,43 @@ public class DiscordClient(
                         );
                     }
 
+                    var requestGate =
+                        tokenKind == TokenKind.User ? _userRequestGate : _botRequestGate;
+
+                    await requestGate.WaitAsync(innerContext.CancellationToken);
                     HttpResponseMessage response;
-
-                    if (tokenKind == TokenKind.User && _useBrowserTransport && _session is not null)
+                    try
                     {
-                        var cloakResponse = await _session.GetAsync(
-                            requestUri.ToString(),
-                            headers: headers,
-                            cancellationToken: innerContext.CancellationToken
-                        );
+                        if (
+                            tokenKind == TokenKind.User
+                            && _useBrowserTransport
+                            && _session is not null
+                        )
+                        {
+                            var cloakResponse = await _session.GetAsync(
+                                requestUri.ToString(),
+                                headers: headers,
+                                cancellationToken: innerContext.CancellationToken
+                            );
 
-                        response = ToHttpResponseMessage(cloakResponse, requestUri);
+                            response = ToHttpResponseMessage(cloakResponse, requestUri);
+                        }
+                        else
+                        {
+                            using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+                            foreach (var (name, value) in headers)
+                                request.Headers.TryAddWithoutValidation(name, value);
+
+                            response = await _httpClient.SendAsync(
+                                request,
+                                HttpCompletionOption.ResponseHeadersRead,
+                                innerContext.CancellationToken
+                            );
+                        }
                     }
-                    else
+                    finally
                     {
-                        using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
-                        foreach (var (name, value) in headers)
-                            request.Headers.TryAddWithoutValidation(name, value);
-
-                        response = await _httpClient.SendAsync(
-                            request,
-                            HttpCompletionOption.ResponseHeadersRead,
-                            innerContext.CancellationToken
-                        );
+                        requestGate.Release();
                     }
 
                     RecordInvalidRequestOrThrow(response);
@@ -1394,5 +1447,10 @@ public class DiscordClient(
         }
     }
 
-    public void Dispose() => _session?.Dispose();
+    public void Dispose()
+    {
+        _session?.Dispose();
+        _userRequestGate.Dispose();
+        _botRequestGate.Dispose();
+    }
 }

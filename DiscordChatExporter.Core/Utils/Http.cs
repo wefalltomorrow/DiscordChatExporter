@@ -119,8 +119,8 @@ public static class Http
         if (args.Outcome.Result is { } response && IsRateLimitResponse(response))
         {
             if (
-                await TryGetDiscordRetryAfterAsync(response, args.Context.CancellationToken)
-                is { } bodyRetryAfter
+                await TryGetDiscordRetryAfterAsync(response, args.Context.CancellationToken) is
+                { } bodyRetryAfter
             )
             {
                 return bodyRetryAfter + TimeSpan.FromSeconds(1);

@@ -34,6 +34,7 @@ servers to portable files, with support for Discord markdown and rich media.
   multi-channel run.
 - **Cancellation controls, completion summaries, rate-limit status, count-backed progress, and ETA**.
 - **Shared client-wide rate-limit coordination** so concurrent export workers honor the same Discord pause.
+- **Bounded Discord API concurrency** (4 simultaneous user-token requests per client; 16 for bot tokens) so a high channel-parallelism setting cannot create a large initial request burst.
 - **429 retry timing from Discord's JSON `retry_after` response**, with header/exponential fallbacks.
 - **Invalid-request safety circuit breaker** that stops a run after an abnormal burst of HTTP 401/403/429 responses.
 - User-token requests **always respect Discord's advisory rate-limit headers**, even if advisory limits are disabled for bot-token testing.
@@ -68,7 +69,8 @@ These changes improve request consistency; they are not a guarantee against acco
 CLI's normal in-place progress display, uses `manifest.json` checkpoints to skip verified completed
 channels, automatically retries unfinished channels, and avoids the old per-channel `/channels/{id}`
 resolution problem. Automatic partial-failure retries are intentionally bounded, and clearly permanent
-permission/not-found failures are not hammered repeatedly.
+permission/not-found failures are not hammered repeatedly. The wrapper passes the token to the CLI through
+`DISCORD_TOKEN` rather than placing it in the child process command line.
 
 ### Keeping tokens out of command arguments
 
