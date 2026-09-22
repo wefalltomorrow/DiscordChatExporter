@@ -292,8 +292,7 @@ public class DiscordClient(
         try
         {
             var now = DateTimeOffset.UtcNow;
-            var remaining =
-                _lastUserRequestStartedUtc + _userRequestStartInterval - now;
+            var remaining = _lastUserRequestStartedUtc + _userRequestStartInterval - now;
 
             if (remaining > TimeSpan.Zero)
                 await _delayAsync(remaining, cancellationToken);
