@@ -379,10 +379,7 @@ public class DiscordClient(
         }
 
         var resilienceContext = ResilienceContextPool.Shared.Get(cancellationToken);
-        resilienceContext.Properties.Set(
-            Http.RateLimitDelayHandlerKey,
-            WaitForHardRateLimitAsync
-        );
+        resilienceContext.Properties.Set(Http.RateLimitDelayHandlerKey, WaitForHardRateLimitAsync);
 
         try
         {
