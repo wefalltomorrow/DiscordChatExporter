@@ -29,10 +29,10 @@ public class DiscordClient(
 {
     private const int JsonParseRetryAttempts = 5;
 
-    internal const int InvalidRequestCircuitBreakerThreshold = 100;
-    internal const int UserRequestConcurrencyLimit = 2;
+    internal const int InvalidRequestCircuitBreakerThreshold = 25;
+    internal const int UserRequestConcurrencyLimit = 1;
     internal const int BotRequestConcurrencyLimit = 16;
-    internal static readonly TimeSpan UserRequestStartInterval = TimeSpan.FromMilliseconds(250);
+    internal static readonly TimeSpan UserRequestStartInterval = TimeSpan.FromMilliseconds(750);
     internal static readonly TimeSpan InvalidRequestCircuitBreakerWindow = TimeSpan.FromMinutes(10);
     internal static readonly TimeSpan AdaptiveRateLimitWindow = TimeSpan.FromMinutes(10);
 
@@ -243,10 +243,10 @@ public class DiscordClient(
     internal static TimeSpan GetAdaptiveHardRateLimitCushion(int recentRateLimitCount) =>
         recentRateLimitCount switch
         {
-            <= 1 => TimeSpan.Zero,
-            2 => TimeSpan.FromSeconds(2),
-            3 => TimeSpan.FromSeconds(5),
-            _ => TimeSpan.FromSeconds(15),
+            <= 1 => TimeSpan.FromSeconds(5),
+            2 => TimeSpan.FromSeconds(15),
+            3 => TimeSpan.FromSeconds(30),
+            _ => TimeSpan.FromSeconds(60),
         };
 
     private TimeSpan RecordHardRateLimit()

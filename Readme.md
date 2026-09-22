@@ -34,9 +34,10 @@ servers to portable files, with support for Discord markdown and rich media.
   multi-channel run.
 - **Cancellation controls, completion summaries, rate-limit status, count-backed progress, and ETA**.
 - **Shared client-wide rate-limit coordination** so concurrent export workers honor the same Discord pause.
-- **Bounded Discord API concurrency** (2 simultaneous user-token requests per client; 16 for bot tokens) so a high channel-parallelism setting cannot create a large initial request burst.
-- **250 ms minimum spacing between user-token API request starts**, preventing parallel channel exports from creating request spikes.
-- **Adaptive post-429 cooldowns**: repeated hard rate limits within a 10-minute window add progressively longer safety cushions after Discord's own retry interval.
+- **Serialized user-token Discord API traffic**: only 1 user-token API request may be in flight per client (bot tokens retain their separate 16-request ceiling).
+- **750 ms minimum spacing between user-token API request starts**, intentionally favoring low-impact archival traffic over maximum export speed.
+- **Aggressive adaptive post-429 cooldowns**: Discord's own retry interval is always honored, then an additional 5s / 15s / 30s / 60s safety cushion is added as hard rate limits repeat within a 10-minute window.
+- **Earlier invalid-response circuit breaker**: 25 HTTP 401/403/429 responses within 10 minutes stops the run before a broken token/permission state can generate a large volume of failed requests.
 - **Per-run unavailable-endpoint suppression**: once an exact request returns 403/404, repeated attempts at that same resource are served from the local failure cache rather than hitting Discord again.
 - **Shared per-run guild/member/channel/role metadata caching** across every channel in a server export, including collapse of concurrent duplicate lookups.
 - **429 retry timing from Discord's JSON `retry_after` response**, with header/exponential fallbacks.
