@@ -1,4 +1,4 @@
-name: fork-release
+name: release
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
       - "release/**"
 
 concurrency:
-  group: fork-release-${{ github.ref }}
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
 env:
@@ -27,7 +27,7 @@ jobs:
           version="${GITHUB_REF_NAME#release/}"
 
           if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::Release branch must be named release/<semver>, e.g. release/2.48.0-bestofall.1"
+            echo "::error::Release branch must be named release/<semver>, e.g. release/2.48.0-wft.1"
             exit 1
           fi
 
@@ -148,26 +148,24 @@ jobs:
         shell: bash
         run: |
           cat > release-notes.md <<'EOF'
-          ## DiscordChatExporter — Best-of-All Fork
+          This is my maintained fork of DiscordChatExporter, built mainly around reliable long-running server exports.
 
-          First formal release of the consolidated fork.
-
-          Highlights:
+          Main changes:
           - resumable/checkpointed whole-server exports
-          - malformed/truncated JSON recovery
-          - SQLite export, library search, and offline conversion
-          - conservative user-token request pacing and coordinated rate-limit handling
-          - shared per-run metadata caching and duplicate-request suppression
+          - much more conservative user-token request pacing and rate-limit handling
+          - shared metadata caching to cut down duplicate Discord requests
+          - malformed/truncated JSON recovery without restarting a whole channel
+          - SQLite export, library search and offline conversion
           - bounded retries and permanent-failure handling
-          - Windows browser-compatible transport for user-token requests
-          - cross-platform self-contained CLI and GUI builds
+          - Windows user-token browser/TLS transport
+          - self-contained CLI and GUI builds for Windows, Linux and macOS
 
-          For long single-server archival exports, see the README's recommended `DISCORD_TOKEN` + `exportguild --resume` workflow.
+          If you're using the CLI for a long server export, the README has the exact `DISCORD_TOKEN` + `exportguild --resume` command I recommend.
 
-          This is a fork-specific release and is not an official Tyrrrz upstream release.
+          Based on upstream DiscordChatExporter by Tyrrrz, with selected work from other community forks. Full credits are in the README and NOTICE.
           EOF
 
-          gh release create "$VERSION"             --repo "${GITHUB_REPOSITORY}"             --target "${GITHUB_SHA}"             --title "DiscordChatExporter Best-of-All $VERSION"             --notes-file release-notes.md
+          gh release create "$VERSION"             --repo "${GITHUB_REPOSITORY}"             --target "${GITHUB_SHA}"             --title "DiscordChatExporter $VERSION"             --notes-file release-notes.md
 
   deploy:
     needs:
