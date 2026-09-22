@@ -76,10 +76,7 @@ internal class ExportContext(
             }
 
             foreach (
-                var role in await cache.GetGuildRolesAsync(
-                    Request.Guild.Id,
-                    cancellationToken
-                )
+                var role in await cache.GetGuildRolesAsync(Request.Guild.Id, cancellationToken)
             )
             {
                 _rolesById[role.Id] = role;
