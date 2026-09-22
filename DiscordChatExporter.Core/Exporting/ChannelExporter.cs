@@ -8,8 +8,25 @@ using Gress;
 
 namespace DiscordChatExporter.Core.Exporting;
 
-public class ChannelExporter(DiscordClient discord)
+public class ChannelExporter
 {
+    private readonly DiscordClient _discord;
+    private readonly ExportCache _cache;
+
+    public ChannelExporter(DiscordClient discord)
+    {
+        _discord = discord;
+        _cache = new ExportCache(discord);
+    }
+
+    internal ChannelExporter(DiscordClient discord, ExportCache cache)
+    {
+        _discord = discord;
+        _cache = cache;
+    }
+
+    public long MetadataCacheHitCount => _cache.HitCount;
+
     public async ValueTask<ExportResult> ExportChannelAsync(
         ExportRequest request,
         IProgress<ExportProgress>? progress = null,
@@ -27,8 +44,9 @@ public class ChannelExporter(DiscordClient discord)
             );
         }
 
-        // Build context
-        var context = new ExportContext(discord, request);
+        // Build context. Metadata is shared across all channels exported by this
+        // ChannelExporter so the same guild/member/channel lookups are not repeated.
+        var context = new ExportContext(_discord, request, cache: _cache);
         await context.PopulateChannelsAndRolesAsync(cancellationToken);
 
         // Initialize the exporter before further checks to ensure the file is created even if
@@ -69,14 +87,14 @@ public class ChannelExporter(DiscordClient discord)
             var progressState = new ExportProgressState();
 
             var messages = !request.IsReverseMessageOrder
-                ? discord.GetMessagesAsync(
+                ? _discord.GetMessagesAsync(
                     request.Channel.Id,
                     request.After,
                     request.Before,
                     progressState,
                     cancellationToken
                 )
-                : discord.GetMessagesInReverseAsync(
+                : _discord.GetMessagesInReverseAsync(
                     request.Channel.Id,
                     request.After,
                     request.Before,

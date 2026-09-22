@@ -15,7 +15,12 @@ using PowerKit.Extensions;
 
 namespace DiscordChatExporter.Core.Exporting;
 
-internal class ExportContext(DiscordClient discord, ExportRequest request, bool isOffline = false)
+internal class ExportContext(
+    DiscordClient discord,
+    ExportRequest request,
+    bool isOffline = false,
+    ExportCache? cache = null
+)
 {
     private readonly Dictionary<Snowflake, Member?> _membersById = new();
     private readonly Dictionary<Snowflake, Color> _memberColorsById = new();
@@ -58,6 +63,28 @@ internal class ExportContext(DiscordClient discord, ExportRequest request, bool 
         CancellationToken cancellationToken = default
     )
     {
+        if (cache is not null && !IsOffline)
+        {
+            foreach (
+                var channel in await cache.GetGuildChannelsAsync(
+                    Request.Guild.Id,
+                    cancellationToken
+                )
+            )
+            {
+                _channelsById[channel.Id] = channel;
+            }
+
+            foreach (
+                var role in await cache.GetGuildRolesAsync(Request.Guild.Id, cancellationToken)
+            )
+            {
+                _rolesById[role.Id] = role;
+            }
+
+            return;
+        }
+
         await foreach (
             var channel in Discord.GetGuildChannelsAsync(Request.Guild.Id, cancellationToken)
         )
@@ -86,7 +113,9 @@ internal class ExportContext(DiscordClient discord, ExportRequest request, bool 
             return;
         }
 
-        var channel = await Discord.TryGetChannelAsync(id, cancellationToken);
+        var channel = cache is not null
+            ? await cache.GetChannelAsync(id, cancellationToken)
+            : await Discord.TryGetChannelAsync(id, cancellationToken);
 
         // Store the result even if it's null, to avoid re-fetching non-existing channels
         _channelsById[id] = channel;
@@ -110,17 +139,30 @@ internal class ExportContext(DiscordClient discord, ExportRequest request, bool 
             return;
         }
 
-        var member = await Discord.TryGetGuildMemberAsync(Request.Guild.Id, id, cancellationToken);
-
-        // User may have left the guild since they were mentioned.
-        // Create a dummy member object based on the user info.
-        if (member is null)
+        Member? member;
+        if (cache is not null)
         {
-            var user = fallbackUser ?? await Discord.TryGetUserAsync(id, cancellationToken);
+            member = await cache.GetMemberAsync(
+                Request.Guild.Id,
+                id,
+                fallbackUser,
+                cancellationToken
+            );
+        }
+        else
+        {
+            member = await Discord.TryGetGuildMemberAsync(Request.Guild.Id, id, cancellationToken);
 
-            // User may have been deleted since they were mentioned
-            if (user is not null)
-                member = Member.CreateFallback(user);
+            // User may have left the guild since they were mentioned.
+            // Create a dummy member object based on the user info.
+            if (member is null)
+            {
+                var user = fallbackUser ?? await Discord.TryGetUserAsync(id, cancellationToken);
+
+                // User may have been deleted since they were mentioned
+                if (user is not null)
+                    member = Member.CreateFallback(user);
+            }
         }
 
         // Store the result even if it's null, to avoid re-fetching non-existing members

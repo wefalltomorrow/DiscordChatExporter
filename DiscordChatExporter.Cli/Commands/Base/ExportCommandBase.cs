@@ -527,6 +527,15 @@ public abstract class ExportCommandBase : DiscordCommandBase
                     $"Resumed past {skippedCompletedCount} previously completed channel(s)."
                 );
             }
+
+            var requestStats = Discord.GetRequestStats();
+            await console.Output.WriteLineAsync(
+                $"Discord API: {requestStats.RequestCount} request(s), "
+                    + $"{requestStats.HardRateLimitCount} HTTP 429(s), "
+                    + $"{requestStats.AdvisoryPauseCount} advisory pause(s), "
+                    + $"{requestStats.AvoidedUnavailableRequestCount} repeated unavailable request(s) avoided, "
+                    + $"{Exporter.MetadataCacheHitCount} metadata cache hit(s)."
+            );
         }
 
         // Print warnings
