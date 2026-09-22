@@ -172,6 +172,9 @@ This fork also incorporates/adapts work from:
   and extensive reliability/hardening work.
 - [nulldg/DiscordChatExporterPlus](https://github.com/nulldg/DiscordChatExporterPlus) — HttpCloak
   browser/TLS transport work.
+- [edelkas/DiscordChatExporter](https://github.com/edelkas/DiscordChatExporter) — inspiration/reference
+  for shared export metadata caching and additional archival/export improvements selectively reviewed
+  for this fork.
 - [Tyrrrz/DiscordChatExporter PR #1582](https://github.com/Tyrrrz/DiscordChatExporter/pull/1582) and
   the earlier client-properties work it builds on.
 
