@@ -19,20 +19,21 @@ public class RateLimitSpecs
     [Fact]
     public void Archival_request_concurrency_is_conservatively_bounded()
     {
-        DiscordClient.UserRequestConcurrencyLimit.Should().Be(2);
+        DiscordClient.UserRequestConcurrencyLimit.Should().Be(1);
         DiscordClient.BotRequestConcurrencyLimit.Should().Be(16);
-        DiscordClient.UserRequestStartInterval.Should().Be(TimeSpan.FromMilliseconds(250));
+        DiscordClient.UserRequestStartInterval.Should().Be(TimeSpan.FromMilliseconds(750));
+        DiscordClient.InvalidRequestCircuitBreakerThreshold.Should().Be(25);
         DiscordClient
             .UserRequestConcurrencyLimit.Should()
             .BeLessThan(DiscordClient.BotRequestConcurrencyLimit);
     }
 
     [Theory]
-    [InlineData(1, 0)]
-    [InlineData(2, 2)]
-    [InlineData(3, 5)]
-    [InlineData(4, 15)]
-    [InlineData(20, 15)]
+    [InlineData(1, 5)]
+    [InlineData(2, 15)]
+    [InlineData(3, 30)]
+    [InlineData(4, 60)]
+    [InlineData(20, 60)]
     public void Repeated_hard_rate_limits_add_a_conservative_cooldown(
         int recentRateLimitCount,
         int expectedSeconds
