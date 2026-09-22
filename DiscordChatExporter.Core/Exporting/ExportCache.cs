@@ -40,7 +40,7 @@ internal sealed class ExportCache(DiscordClient discord)
         Snowflake guildId,
         CancellationToken cancellationToken = default
     ) =>
-        await GetOrAddAsync(
+        await GetOrAddAsync<Snowflake, IReadOnlyList<Channel>>(
             _guildChannels,
             guildId,
             async id =>
@@ -60,7 +60,7 @@ internal sealed class ExportCache(DiscordClient discord)
         Snowflake guildId,
         CancellationToken cancellationToken = default
     ) =>
-        await GetOrAddAsync(
+        await GetOrAddAsync<Snowflake, IReadOnlyList<Role>>(
             _guildRoles,
             guildId,
             async id =>
@@ -95,8 +95,8 @@ internal sealed class ExportCache(DiscordClient discord)
             async key =>
             {
                 var member = await discord.TryGetGuildMemberAsync(
-                    key.GuildId,
-                    key.UserId,
+                    key.Item1,
+                    key.Item2,
                     cancellationToken
                 );
 
@@ -104,7 +104,7 @@ internal sealed class ExportCache(DiscordClient discord)
                     return member;
 
                 var user = fallbackUser
-                    ?? await discord.TryGetUserAsync(key.UserId, cancellationToken);
+                    ?? await discord.TryGetUserAsync(key.Item2, cancellationToken);
 
                 return user is not null ? Member.CreateFallback(user) : null;
             }
