@@ -151,11 +151,7 @@ internal class ExportContext(
         }
         else
         {
-            member = await Discord.TryGetGuildMemberAsync(
-                Request.Guild.Id,
-                id,
-                cancellationToken
-            );
+            member = await Discord.TryGetGuildMemberAsync(Request.Guild.Id, id, cancellationToken);
 
             // User may have left the guild since they were mentioned.
             // Create a dummy member object based on the user info.
