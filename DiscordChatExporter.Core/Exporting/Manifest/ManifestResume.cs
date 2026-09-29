@@ -9,6 +9,58 @@ namespace DiscordChatExporter.Core.Exporting.Manifest;
 
 public static class ManifestResume
 {
+    public static ManifestEntry? FindBestEntry(
+        ExportManifest? manifest,
+        ExportRequest request,
+        out bool isAmbiguous,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        isAmbiguous = false;
+
+        if (manifest is null)
+            return null;
+
+        var baseEntries = manifest
+            .Entries.Where(entry =>
+                entry.GuildId == request.Guild.Id.ToString()
+                && entry.ChannelId == request.Channel.Id.ToString()
+                && string.Equals(
+                    entry.File,
+                    ManifestFileFamily.GetBaseFileName(entry.File),
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            .OrderByDescending(entry => entry.ExportedAt)
+            .ToArray();
+
+        if (baseEntries.Length == 0)
+            return null;
+
+        var expectedFileName = Path.GetFileName(request.OutputFilePath);
+        var exact = baseEntries.FirstOrDefault(entry =>
+            entry.Format == request.Format.ToString()
+            && string.Equals(entry.File, expectedFileName, StringComparison.OrdinalIgnoreCase)
+        );
+
+        if (exact is not null)
+            return exact;
+
+        if (baseEntries.Length == 1)
+            return baseEntries[0];
+
+        var sameFormat = baseEntries
+            .Where(entry => entry.Format == request.Format.ToString())
+            .ToArray();
+
+        if (sameFormat.Length == 1)
+            return sameFormat[0];
+
+        isAmbiguous = true;
+        return null;
+    }
+
     public static bool IsAlreadyExported(
         ExportManifest? manifest,
         string dirPath,
