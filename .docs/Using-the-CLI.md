@@ -258,13 +258,23 @@ user-token Discord API requests.
 #### Resuming interrupted multi-channel exports
 
 For long whole-server or multi-channel exports, use `--resume` to enable per-channel checkpointing.
-Each completed channel is recorded in `manifest.json` together with its file size and SHA-256 hash.
-If the command is interrupted and run again with the same output settings, completed and verified
-channels are skipped while incomplete or failed channels are exported again.
+Each completed channel is recorded in `manifest.json` together with its file size, SHA-256 hash, format,
+and continuation-sensitive export settings.
 
 ```console
 ./DiscordChatExporter.Cli exportguild -t "mfa.Ifrn" -g 21814 --resume
 ```
+
+With manifest schema v2, resume treats the recorded settings as the source of truth for an existing
+archive. If the current CLI options differ, DiscordChatExporter warns and restores the original format,
+media download/reuse and media directory, date range, partitioning, filter, reverse-order, markdown,
+locale, and UTC settings before deciding whether that archive is complete. If a recorded output is
+missing or fails integrity verification, it is rebuilt with those restored settings instead of the
+current defaults.
+
+Channels that have no manifest entry yet use the options supplied on the current command because there
+are no recorded settings to restore. Older v1 manifests also lack stored settings, so they retain the
+legacy behavior until a successful checkpoint upgrades their entries.
 
 The manifest is updated as each channel finishes, so progress survives a crash or terminal closure.
 Partitioned exports are considered complete only when every recorded partition exists and passes
