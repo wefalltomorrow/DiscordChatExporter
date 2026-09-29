@@ -132,8 +132,8 @@ public abstract class ExportCommandBase : DiscordCommandBase
 
     [CommandOption(
         "resume",
-        Description = "Resume a previous multi-channel export by verifying manifest.json and skipping channels whose output is already complete. "
-            + "Successful channels are checkpointed to the manifest as they finish."
+        Description = "Resume a previous multi-channel export by restoring manifest-backed settings, verifying completed outputs, "
+            + "and checkpointing channels as they finish."
     )]
     public bool ShouldResume { get; set; }
 
@@ -524,11 +524,68 @@ public abstract class ExportCommandBase : DiscordCommandBase
                     manifestsByDir[dirPath] = manifest;
                 }
 
+                var entry = ManifestResume.FindBestEntry(
+                    manifest,
+                    job.Request,
+                    out var isAmbiguous,
+                    cancellationToken
+                );
+
+                if (isAmbiguous)
+                {
+                    errorsByChannel[job.Channel] =
+                        "Multiple existing exports were found for this channel and the resume target is ambiguous. "
+                        + "Specify the original format/output path, or keep only the archive you want to resume in this manifest.";
+                    continue;
+                }
+
+                var request = job.Request;
+                if (entry?.Settings is not null)
+                {
+                    if (!Enum.TryParse<ExportFormat>(entry.Format, out var resumeFormat))
+                    {
+                        errorsByChannel[job.Channel] =
+                            $"The existing manifest contains an unknown export format '{entry.Format}'.";
+                        continue;
+                    }
+
+                    try
+                    {
+                        request = entry.Settings.CreateResumeRequest(
+                            job.Request.Guild,
+                            job.Request.Channel,
+                            Path.Combine(dirPath, entry.File),
+                            resumeFormat
+                        );
+                    }
+                    catch (FormatException ex)
+                    {
+                        errorsByChannel[job.Channel] =
+                            $"The existing manifest contains invalid resume settings: {ex.Message}";
+                        continue;
+                    }
+
+                    if (
+                        resumeFormat != job.Request.Format
+                        || !entry.Settings.IsCompatibleWith(job.Request)
+                        || !string.Equals(
+                            Path.GetFileName(job.Request.OutputFilePath),
+                            entry.File,
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                    )
+                    {
+                        warningsByChannel[job.Channel] =
+                            "Some CLI export options differ from the original export. "
+                            + "Resume mode will use the format and settings stored in manifest.json.";
+                    }
+                }
+
                 if (
                     ManifestResume.IsAlreadyExported(
                         manifest,
                         dirPath,
-                        job.Request,
+                        request,
                         cancellationToken
                     )
                 )
@@ -537,7 +594,7 @@ public abstract class ExportCommandBase : DiscordCommandBase
                 }
                 else
                 {
-                    pendingJobs.Add(job);
+                    pendingJobs.Add(job with { Request = request });
                 }
             }
 
