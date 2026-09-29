@@ -93,6 +93,71 @@ public class ManifestExportSettingsSpecs
     }
 
     [Fact]
+    public void Settings_restore_the_original_request_for_resume()
+    {
+        var original = Request();
+        var settings = ManifestExportSettings.FromRequest(original);
+        var restored = settings.CreateResumeRequest(
+            original.Guild,
+            original.Channel,
+            original.OutputFilePath,
+            original.Format
+        );
+
+        restored.OutputFilePath.Should().Be(original.OutputFilePath);
+        restored.After.Should().Be(original.After);
+        restored.Before.Should().Be(original.Before);
+        restored.PartitionLimit.ToExpression().Should().Be(original.PartitionLimit.ToExpression());
+        restored.MessageFilter.ToExpression().Should().Be(original.MessageFilter.ToExpression());
+        restored.IsReverseMessageOrder.Should().Be(original.IsReverseMessageOrder);
+        restored.ShouldFormatMarkdown.Should().Be(original.ShouldFormatMarkdown);
+        restored.ShouldDownloadAssets.Should().Be(original.ShouldDownloadAssets);
+        restored.ShouldReuseAssets.Should().Be(original.ShouldReuseAssets);
+        restored.AssetsDirPath.Should().Be(original.AssetsDirPath);
+        restored.HasExplicitAssetsDirPath.Should().BeTrue();
+        restored.Locale.Should().Be(original.Locale);
+        restored.IsUtcNormalizationEnabled.Should().Be(original.IsUtcNormalizationEnabled);
+    }
+
+    [Fact]
+    public void Resume_restores_default_media_directory_relative_to_the_existing_archive()
+    {
+        var existingFilePath = Path.Combine(Path.GetTempPath(), "existing", "archive.json");
+        var original = new ExportRequest(
+            Guild(),
+            Channel(),
+            existingFilePath,
+            null,
+            ExportFormat.Json,
+            null,
+            null,
+            PartitionLimit.Null,
+            MessageFilter.Null,
+            isReverseMessageOrder: false,
+            shouldFormatMarkdown: true,
+            shouldDownloadAssets: true,
+            shouldReuseAssets: true,
+            locale: "en-AU",
+            isUtcNormalizationEnabled: true
+        );
+        var settings = ManifestExportSettings.FromRequest(original);
+
+        var restored = settings.CreateResumeRequest(
+            original.Guild,
+            original.Channel,
+            existingFilePath,
+            original.Format
+        );
+
+        restored.HasExplicitAssetsDirPath.Should().BeFalse();
+        restored.AssetsDirPath.Should().Be(
+            $"{existingFilePath}_Files{Path.DirectorySeparatorChar}"
+        );
+        restored.ShouldDownloadAssets.Should().BeTrue();
+        restored.ShouldReuseAssets.Should().BeTrue();
+    }
+
+    [Fact]
     public void Compatibility_detects_changed_export_settings()
     {
         var original = Request(markdown: true);
