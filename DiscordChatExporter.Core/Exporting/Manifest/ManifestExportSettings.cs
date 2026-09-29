@@ -89,6 +89,43 @@ public sealed record ManifestExportSettings(
             && current.IsUtcNormalizationEnabled == IsUtcNormalizationEnabled;
     }
 
+    public ExportRequest CreateResumeRequest(
+        Guild guild,
+        Channel channel,
+        string existingFilePath,
+        ExportFormat format
+    )
+    {
+        var messageFilter = string.IsNullOrWhiteSpace(MessageFilter)
+            ? Filtering.MessageFilter.Null
+            : Filtering.MessageFilter.Parse(MessageFilter);
+
+        var partitionLimit = string.IsNullOrWhiteSpace(PartitionLimit)
+            ? Partitioning.PartitionLimit.Null
+            : Partitioning.PartitionLimit.Parse(PartitionLimit);
+
+        var after = string.IsNullOrWhiteSpace(After) ? null : Snowflake.Parse(After);
+        var before = string.IsNullOrWhiteSpace(Before) ? null : Snowflake.Parse(Before);
+
+        return new ExportRequest(
+            guild,
+            channel,
+            existingFilePath,
+            UsesDefaultAssetsDir ? null : AssetsDirPath,
+            format,
+            after,
+            before,
+            partitionLimit,
+            messageFilter,
+            IsReverseMessageOrder,
+            ShouldFormatMarkdown,
+            ShouldDownloadAssets,
+            ShouldReuseAssets,
+            Locale,
+            IsUtcNormalizationEnabled
+        );
+    }
+
     public ExportRequest CreateContinuationRequest(
         Guild guild,
         Channel channel,
