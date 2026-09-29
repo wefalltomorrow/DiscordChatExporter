@@ -37,11 +37,7 @@ public static class ManifestResume
                 var baseFileName = ManifestFileFamily.GetBaseFileName(newest.File);
                 return group.FirstOrDefault(entry =>
                         string.Equals(entry.File, baseFileName, StringComparison.OrdinalIgnoreCase)
-                    )
-                    ?? newest with
-                    {
-                        File = baseFileName,
-                    };
+                    ) ?? newest with { File = baseFileName };
             })
             .OrderByDescending(entry => entry.ExportedAt)
             .ToArray();
