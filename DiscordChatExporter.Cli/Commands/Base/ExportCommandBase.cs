@@ -554,14 +554,7 @@ public abstract class ExportCommandBase : DiscordCommandBase
                     }
                 }
 
-                if (
-                    ManifestResume.IsAlreadyExported(
-                        manifest,
-                        dirPath,
-                        request,
-                        cancellationToken
-                    )
-                )
+                if (ManifestResume.IsAlreadyExported(manifest, dirPath, request, cancellationToken))
                 {
                     skippedCompletedCount++;
                 }
