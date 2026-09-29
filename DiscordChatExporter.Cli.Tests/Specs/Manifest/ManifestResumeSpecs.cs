@@ -378,6 +378,31 @@ public class ManifestResumeSpecs
     }
 
     [Fact]
+    public void Resume_target_resolution_recovers_the_base_path_when_only_later_partitions_are_catalogued()
+    {
+        var request = Request(
+            Path.Combine(Path.GetTempPath(), "archive.json"),
+            guildId: 1,
+            channelId: 2
+        );
+        var settings = ManifestExportSettings.FromRequest(request);
+        var manifest = Manifest(
+            Entry("archive [part 2].json", partitioned: true) with
+            {
+                Settings = settings,
+            }
+        );
+
+        var entry = ManifestResume.FindBestEntry(manifest, request, out var isAmbiguous);
+
+        isAmbiguous.Should().BeFalse();
+        entry.Should().NotBeNull();
+        entry!.File.Should().Be("archive.json");
+        entry.Settings.Should().Be(settings);
+        entry.Partitioned.Should().BeTrue();
+    }
+
+    [Fact]
     public void Resume_target_resolution_fails_closed_when_multiple_archives_are_ambiguous()
     {
         var request = Request(
