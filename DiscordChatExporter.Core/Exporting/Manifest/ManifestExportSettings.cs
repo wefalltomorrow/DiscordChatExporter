@@ -104,8 +104,8 @@ public sealed record ManifestExportSettings(
             ? Partitioning.PartitionLimit.Null
             : Partitioning.PartitionLimit.Parse(PartitionLimit);
 
-        var after = string.IsNullOrWhiteSpace(After) ? null : Snowflake.Parse(After);
-        var before = string.IsNullOrWhiteSpace(Before) ? null : Snowflake.Parse(Before);
+        Snowflake? after = string.IsNullOrWhiteSpace(After) ? null : Snowflake.Parse(After);
+        Snowflake? before = string.IsNullOrWhiteSpace(Before) ? null : Snowflake.Parse(Before);
 
         return new ExportRequest(
             guild,
