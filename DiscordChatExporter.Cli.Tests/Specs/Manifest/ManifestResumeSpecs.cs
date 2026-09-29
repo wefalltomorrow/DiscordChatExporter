@@ -299,6 +299,118 @@ public class ManifestResumeSpecs
     }
 
     [Fact]
+    public void V2_resume_can_restore_manifest_settings_before_verifying_the_archive()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "DceManifest_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var filePath = Path.Combine(dir, "archive.json");
+        File.WriteAllText(filePath, "{}");
+
+        try
+        {
+            var originalRequest = Request(filePath, guildId: 1, channelId: 2);
+            var entry = Entry(
+                "archive.json",
+                new FileInfo(filePath).Length,
+                ComputeSha256(filePath)
+            ) with
+            {
+                Settings = ManifestExportSettings.FromRequest(originalRequest),
+            };
+            var manifest = Manifest(entry);
+            var changedRequest = Request(
+                filePath,
+                guildId: 1,
+                channelId: 2,
+                shouldFormatMarkdown: false
+            );
+
+            var resolvedEntry = ManifestResume.FindBestEntry(
+                manifest,
+                changedRequest,
+                out var isAmbiguous
+            );
+
+            isAmbiguous.Should().BeFalse();
+            resolvedEntry.Should().Be(entry);
+
+            var restoredRequest = resolvedEntry!.Settings!.CreateResumeRequest(
+                changedRequest.Guild,
+                changedRequest.Channel,
+                Path.Combine(dir, resolvedEntry.File),
+                ExportFormat.Json
+            );
+
+            restoredRequest.ShouldFormatMarkdown.Should().BeTrue();
+            ManifestResume.IsAlreadyExported(manifest, dir, restoredRequest).Should().BeTrue();
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
+    public void Resume_target_resolution_uses_the_base_entry_for_a_partition_family()
+    {
+        var request = Request(
+            Path.Combine(Path.GetTempPath(), "archive.json"),
+            guildId: 1,
+            channelId: 2
+        );
+        var settings = ManifestExportSettings.FromRequest(request);
+        var manifest = Manifest(
+            Entry("archive.json", partitioned: true) with
+            {
+                Settings = settings,
+            },
+            Entry("archive [part 2].json", partitioned: true) with
+            {
+                Settings = settings,
+            }
+        );
+
+        var entry = ManifestResume.FindBestEntry(manifest, request, out var isAmbiguous);
+
+        isAmbiguous.Should().BeFalse();
+        entry.Should().NotBeNull();
+        entry!.File.Should().Be("archive.json");
+    }
+
+    [Fact]
+    public void Resume_target_resolution_fails_closed_when_multiple_archives_are_ambiguous()
+    {
+        var request = Request(
+            Path.Combine(Path.GetTempPath(), "third.json"),
+            guildId: 1,
+            channelId: 2
+        );
+        var manifest = Manifest(Entry("archive.json"), Entry("other.json"));
+
+        var entry = ManifestResume.FindBestEntry(manifest, request, out var isAmbiguous);
+
+        entry.Should().BeNull();
+        isAmbiguous.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Resume_target_resolution_prefers_an_exact_archive_when_multiple_exist()
+    {
+        var request = Request(
+            Path.Combine(Path.GetTempPath(), "archive.json"),
+            guildId: 1,
+            channelId: 2
+        );
+        var expected = Entry("archive.json");
+        var manifest = Manifest(expected, Entry("other.json"));
+
+        var entry = ManifestResume.FindBestEntry(manifest, request, out var isAmbiguous);
+
+        isAmbiguous.Should().BeFalse();
+        entry.Should().Be(expected);
+    }
+
+    [Fact]
     public void Strict_resume_matching_honors_cancellation_before_hashing()
     {
         var dir = Path.Combine(Path.GetTempPath(), "DceManifest_" + Guid.NewGuid().ToString("N"));
