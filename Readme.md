@@ -20,7 +20,8 @@ The fork remains close to upstream while selectively incorporating useful change
 
 - Resume JSON, HTML, CSV, and SQLite exports.
 - Whole-server checkpointing through `manifest.json`.
-- Manifest v2 stores the original export settings required for safe continuation.
+- Manifest v2 stores the original export settings required for safe resume and continuation.
+- Resume restores recorded settings before verifying or rebuilding existing channel archives.
 - Skip channels that were already completed on a previous run.
 - Incrementally update completed exports with messages posted since the last export.
 - Isolate per-channel failures so one recoverable error does not stop the full server export.
@@ -84,6 +85,10 @@ Remove-Item Env:DISCORD_TOKEN -ErrorAction SilentlyContinue
 ```
 
 `--parallel 1` is the recommended setting for a conservative single-server archival run. User-token Discord requests are serialized internally, so higher channel-level parallelism does not create simultaneous user-token API requests.
+
+For manifest v2 archives, `--resume` restores the recorded format and continuation-sensitive settings
+for existing channel outputs before verifying or rebuilding them. This prevents a later resume command
+from silently changing media, filter, markdown, date-range, partition, locale, or UTC behavior.
 
 To update the completed archive later without re-exporting its full history, run the same command
 with `--incremental` instead of `--resume`:
