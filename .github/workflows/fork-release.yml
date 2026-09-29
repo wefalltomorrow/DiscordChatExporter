@@ -152,7 +152,7 @@ jobs:
 
           Included in this release:
           - resumable and checkpointed whole-server exports
-          - incremental updates for completed exports with manifest-backed setting restoration
+          - manifest-backed setting restoration for CLI resume and incremental updates
           - consistent GUI/CLI continuation behavior, including media/filter/markdown settings
           - conservative user-token request pacing and coordinated rate-limit handling
           - shared metadata caching and duplicate-request suppression
