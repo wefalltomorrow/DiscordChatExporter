@@ -26,12 +26,23 @@ public static class ManifestResume
             .Entries.Where(entry =>
                 entry.GuildId == request.Guild.Id.ToString()
                 && entry.ChannelId == request.Channel.Id.ToString()
-                && string.Equals(
-                    entry.File,
-                    ManifestFileFamily.GetBaseFileName(entry.File),
-                    StringComparison.OrdinalIgnoreCase
-                )
             )
+            .GroupBy(
+                entry => $"{entry.Format}\n{ManifestFileFamily.GetBaseFileName(entry.File)}",
+                StringComparer.OrdinalIgnoreCase
+            )
+            .Select(group =>
+            {
+                var newest = group.OrderByDescending(entry => entry.ExportedAt).First();
+                var baseFileName = ManifestFileFamily.GetBaseFileName(newest.File);
+                return group.FirstOrDefault(entry =>
+                        string.Equals(entry.File, baseFileName, StringComparison.OrdinalIgnoreCase)
+                    )
+                    ?? newest with
+                    {
+                        File = baseFileName,
+                    };
+            })
             .OrderByDescending(entry => entry.ExportedAt)
             .ToArray();
 
