@@ -150,9 +150,9 @@ public class ManifestExportSettingsSpecs
         );
 
         restored.HasExplicitAssetsDirPath.Should().BeFalse();
-        restored.AssetsDirPath.Should().Be(
-            $"{existingFilePath}_Files{Path.DirectorySeparatorChar}"
-        );
+        restored
+            .AssetsDirPath.Should()
+            .Be($"{existingFilePath}_Files{Path.DirectorySeparatorChar}");
         restored.ShouldDownloadAssets.Should().BeTrue();
         restored.ShouldReuseAssets.Should().BeTrue();
     }
