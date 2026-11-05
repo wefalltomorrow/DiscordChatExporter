@@ -303,21 +303,10 @@ internal class ExportContext(
         try
         {
             var filePath = await _assetDownloader.DownloadAsync(url, cancellationToken);
-            var relativeFilePath = Path.GetRelativePath(Request.OutputDirPath, filePath);
-
-            // Prefer the relative path so that the export package can be copied around without breaking references.
-            // However, if the assets directory lies outside the export directory, use the absolute path instead.
-            var shouldUseAbsoluteFilePath =
-                relativeFilePath.StartsWith(
-                    ".." + Path.DirectorySeparatorChar,
-                    StringComparison.Ordinal
-                )
-                || relativeFilePath.StartsWith(
-                    ".." + Path.AltDirectorySeparatorChar,
-                    StringComparison.Ordinal
-                );
-
-            var optimalFilePath = shouldUseAbsoluteFilePath ? filePath : relativeFilePath;
+            var optimalFilePath = ExportAssetPath.GetPortablePath(
+                Request.AssetReferenceDirPath,
+                filePath
+            );
 
             // For HTML, the path needs to be properly formatted
             if (Request.Format is ExportFormat.HtmlDark or ExportFormat.HtmlLight)

@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Text.Json;
 using DiscordChatExporter.Core.Discord;
 using DiscordChatExporter.Core.Discord.Data;
 using DiscordChatExporter.Core.Exporting;
@@ -165,6 +166,93 @@ public class ManifestExportSettingsSpecs
 
         settings.IsCompatibleWith(original).Should().BeTrue();
         settings.IsCompatibleWith(Request(markdown: false)).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Legacy_absolute_media_settings_remain_compatible()
+    {
+        var request = Request();
+        var settings = ManifestExportSettings.FromRequest(request) with
+        {
+            AssetsDirPath = request.AssetsDirPath,
+            AssetsDirRelativeToExport = false,
+        };
+        settings.IsCompatibleWith(request).Should().BeTrue();
+        settings
+            .CreateResumeRequest(
+                request.Guild,
+                request.Channel,
+                request.OutputFilePath,
+                request.Format
+            )
+            .AssetsDirPath.Should()
+            .Be(request.AssetsDirPath);
+    }
+
+    [Fact]
+    public void Manifest_json_preserves_portable_paths_and_defaults_legacy_paths_to_working_directory()
+    {
+        var request = Request();
+        var settings = ManifestExportSettings.FromRequest(request);
+        var json = JsonSerializer.Serialize(
+            settings,
+            ManifestJsonContext.Default.ManifestExportSettings
+        );
+        var restored = JsonSerializer.Deserialize(
+            json,
+            ManifestJsonContext.Default.ManifestExportSettings
+        )!;
+        restored.Should().Be(settings);
+        restored.AssetsDirRelativeToExport.Should().BeTrue();
+
+        var legacyJson = json.Replace(
+            "\"assetsDirRelativeToExport\": true",
+            "\"ignoredLegacyField\": true"
+        );
+        var legacy = JsonSerializer.Deserialize(
+            legacyJson,
+            ManifestJsonContext.Default.ManifestExportSettings
+        )!;
+        legacy.AssetsDirRelativeToExport.Should().BeFalse();
+        var resumed = legacy.CreateResumeRequest(
+            request.Guild,
+            request.Channel,
+            request.OutputFilePath,
+            request.Format
+        );
+        resumed.AssetsDirPath.Should().Be(legacy.AssetsDirPath);
+    }
+
+    [Theory]
+    [InlineData("media", "media")]
+    [InlineData(".", ".")]
+    [InlineData("..", null)]
+    [InlineData("../external", null)]
+    public void Portable_paths_only_include_the_export_directory_and_its_children(
+        string path,
+        string? expected
+    )
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "archive");
+        var assetPath = Path.GetFullPath(Path.Combine(directory, path));
+        ExportAssetPath.GetPortablePath(directory, assetPath).Should().Be(expected ?? assetPath);
+    }
+
+    [Fact]
+    public void External_media_settings_stay_absolute_when_the_archive_moves()
+    {
+        var request = Request();
+        var settings = ManifestExportSettings.FromRequest(request) with
+        {
+            AssetsDirPath = Path.Combine(Path.GetTempPath(), "external-media"),
+        };
+        var restored = settings.CreateResumeRequest(
+            request.Guild,
+            request.Channel,
+            Path.Combine(Path.GetTempPath(), "moved", "archive.json"),
+            request.Format
+        );
+        restored.AssetsDirPath.Should().Be(settings.AssetsDirPath);
     }
 
     [Theory]

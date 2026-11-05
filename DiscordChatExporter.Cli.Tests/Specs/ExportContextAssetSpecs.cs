@@ -10,6 +10,7 @@ using DiscordChatExporter.Core.Discord;
 using DiscordChatExporter.Core.Discord.Data;
 using DiscordChatExporter.Core.Exporting;
 using DiscordChatExporter.Core.Exporting.Filtering;
+using DiscordChatExporter.Core.Exporting.Manifest;
 using DiscordChatExporter.Core.Exporting.Partitioning;
 using FluentAssertions;
 using Xunit;
@@ -47,7 +48,13 @@ public sealed class ExportContextAssetSpecs : IDisposable
         ) => handleAsync(request, cancellationToken);
     }
 
-    private ExportContext CreateHtmlContext(bool shouldDownloadAssets, string? assetsDirPath = null)
+    private ExportContext CreateHtmlContext(
+        bool shouldDownloadAssets,
+        string? assetsDirPath = null,
+        bool reuseAssets = false,
+        ExportFormat format = ExportFormat.HtmlDark,
+        string? outputPath = null
+    )
     {
         var guild = new Guild(new Snowflake(1), "Test Guild", "");
         var channel = new Channel(
@@ -62,13 +69,13 @@ public sealed class ExportContextAssetSpecs : IDisposable
             false,
             null
         );
-        var outputPath = Path.Combine(_dir, "chat.html");
+        outputPath ??= Path.Combine(_dir, "chat.html");
         var request = new ExportRequest(
             guild,
             channel,
             outputPath,
             assetsDirPath,
-            ExportFormat.HtmlDark,
+            format,
             null,
             null,
             PartitionLimit.Null,
@@ -76,11 +83,100 @@ public sealed class ExportContextAssetSpecs : IDisposable
             isReverseMessageOrder: false,
             shouldFormatMarkdown: true,
             shouldDownloadAssets,
-            shouldReuseAssets: false,
+            shouldReuseAssets: reuseAssets,
             locale: "en-US",
             isUtcNormalizationEnabled: true
         );
         return new ExportContext(new DiscordClient("fake-token"), request);
+    }
+
+    [Theory]
+    [InlineData(ExportFormat.Json, false)]
+    [InlineData(ExportFormat.Json, true)]
+    [InlineData(ExportFormat.Db, false)]
+    [InlineData(ExportFormat.Db, true)]
+    [InlineData(ExportFormat.HtmlDark, false)]
+    [InlineData(ExportFormat.HtmlDark, true)]
+    [InlineData(ExportFormat.HtmlLight, false)]
+    [InlineData(ExportFormat.HtmlLight, true)]
+    public async Task Continuation_links_match_the_original_archive(
+        ExportFormat format,
+        bool explicitAssets
+    )
+    {
+        var original = CreateHtmlContext(
+            true,
+            explicitAssets ? Path.Combine(_dir, "media files") : null,
+            reuseAssets: true,
+            format
+        );
+        using var client = new HttpClient(
+            new DelegateHttpMessageHandler(
+                (_, _) =>
+                    Task.FromResult(
+                        new HttpResponseMessage(HttpStatusCode.OK)
+                        {
+                            Content = new StringContent("asset"),
+                        }
+                    )
+            )
+        );
+        const string url = "https://example.com/avatar.png";
+        var downloader = new ExportAssetDownloader(original.Request.AssetsDirPath, false, client);
+        await downloader.DownloadAsync(url);
+        var originalLink = await original.ResolveAssetUrlAsync(url);
+        Path.IsPathRooted(originalLink).Should().BeFalse();
+
+        var request = ManifestExportSettings
+            .FromRequest(original.Request)
+            .CreateContinuationRequest(
+                original.Request.Guild,
+                original.Request.Channel,
+                original.Request.OutputFilePath,
+                Path.Combine(_dir, "temporary", "increment.json"),
+                format,
+                new Snowflake(10),
+                null
+            );
+        var continued = new ExportContext(new DiscordClient("fake-token"), request);
+
+        (await continued.ResolveAssetUrlAsync(url)).Should().Be(originalLink);
+    }
+
+    [Fact]
+    public void Moved_archive_restores_its_explicit_media_directory()
+    {
+        var source = Path.Combine(_dir, "original");
+        var archive = Path.Combine(source, "archive.json");
+        var original = CreateHtmlContext(true, Path.Combine(source, "media"), outputPath: archive);
+        Directory.CreateDirectory(original.Request.AssetsDirPath);
+        File.WriteAllText(archive, "{}");
+        File.WriteAllText(Path.Combine(original.Request.AssetsDirPath, "asset.png"), "asset");
+        var settings = ManifestExportSettings.FromRequest(original.Request);
+        settings.AssetsDirPath.Should().Be("media");
+        var destination = Path.Combine(_dir, "moved");
+        Directory.Move(source, destination);
+        var movedArchive = Path.Combine(destination, "archive.json");
+        var resumed = settings.CreateResumeRequest(
+            original.Request.Guild,
+            original.Request.Channel,
+            movedArchive,
+            ExportFormat.Json
+        );
+        var continued = settings.CreateContinuationRequest(
+            original.Request.Guild,
+            original.Request.Channel,
+            movedArchive,
+            Path.Combine(_dir, "increment.json"),
+            ExportFormat.Json,
+            new Snowflake(10),
+            null
+        );
+
+        resumed.AssetsDirPath.Should().Be(Path.Combine(destination, "media"));
+        continued.AssetsDirPath.Should().Be(resumed.AssetsDirPath);
+        File.ReadAllText(Path.Combine(resumed.AssetsDirPath, "asset.png")).Should().Be("asset");
+        settings.IsCompatibleWith(resumed).Should().BeTrue();
     }
 
     [Fact]
