@@ -280,8 +280,11 @@ public sealed class ContinueExportRunnerTests
     // Regression: a message-less (or otherwise unreadable) export must be skipped during the
     // up-front cutoff read, NOT abort the whole batch. This is the "selected export has nothing
     // to continue from" crash that aborted Continue when any one resolved export was empty.
-    [Fact]
-    public async Task Hydration_skips_an_empty_export_instead_of_aborting_the_batch()
+    [Theory]
+    [InlineData("good.json")]
+    [InlineData("good.html")]
+    [InlineData("good.custom")]
+    public async Task Hydration_uses_stored_format_and_skips_an_empty_export(string fileName)
     {
         var viewModel = CreateViewModel();
         var guild = new Guild(new Snowflake(1), "Guild", "");
@@ -292,7 +295,7 @@ public sealed class ContinueExportRunnerTests
         Directory.CreateDirectory(dir);
         try
         {
-            var goodPath = Path.Combine(dir, "good.json");
+            var goodPath = Path.Combine(dir, fileName);
             var emptyPath = Path.Combine(dir, "empty.json");
             File.WriteAllText(
                 goodPath,

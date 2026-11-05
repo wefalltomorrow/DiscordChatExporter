@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using DiscordChatExporter.Core.Discord;
 using DiscordChatExporter.Core.Exporting;
+using DiscordChatExporter.Core.Exporting.Continuation;
 using DiscordChatExporter.Core.Exporting.Library;
 using DiscordChatExporter.Core.Exporting.Manifest;
 using FluentAssertions;
@@ -90,21 +91,52 @@ public sealed class ContinueExportDiscoverySpecs : IDisposable
         result.Unresolved.Should().BeEmpty();
     }
 
-    [Fact]
-    public async Task Resolves_exact_format_from_catalog_not_extension()
+    [Theory]
+    [InlineData("export.html", ExportFormat.HtmlLight)]
+    [InlineData("export.sqlite3", ExportFormat.Db)]
+    [InlineData("export.html", ExportFormat.Json)]
+    [InlineData("export.custom", ExportFormat.Csv)]
+    public async Task Resolves_exact_format_from_catalog_not_extension(
+        string fileName,
+        ExportFormat format
+    )
     {
         var channelId = new Snowflake(100);
         var dir = await WriteEntryAsync(
             "one",
             channelId,
-            "export.html",
-            nameof(ExportFormat.HtmlLight),
+            fileName,
+            format.ToString(),
             DateTimeOffset.UnixEpoch
         );
 
         var result = await ContinueExportDiscovery.ResolveAsync([dir], [channelId]);
 
-        result.Resolved.Should().ContainSingle().Which.Format.Should().Be(ExportFormat.HtmlLight);
+        result.Resolved.Should().ContainSingle().Which.Format.Should().Be(format);
+        (await ContinuationFormat.ResolveFormatAsync(Path.Combine(dir, fileName)))
+            .Should()
+            .Be(format);
+    }
+
+    [Theory]
+    [InlineData("PlainText")]
+    [InlineData("999")]
+    [InlineData("Unknown")]
+    public async Task Does_not_guess_from_extension_when_manifest_format_is_invalid(string format)
+    {
+        var channelId = new Snowflake(100);
+        var dir = await WriteEntryAsync(
+            "invalid",
+            channelId,
+            "export.json",
+            format,
+            DateTimeOffset.UnixEpoch
+        );
+        var result = await ContinueExportDiscovery.ResolveAsync([dir], [channelId]);
+        result.Resolved.Should().BeEmpty();
+        var act = async () =>
+            await ContinuationFormat.ResolveFormatAsync(Path.Combine(dir, "export.json"));
+        await act.Should().ThrowAsync<InvalidExportException>();
     }
 
     [Fact]
