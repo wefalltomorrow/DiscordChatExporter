@@ -1,5 +1,17 @@
 # Troubleshooting
 
+## Connection diagnostics
+
+In the GUI, select the information button beside Settings, then **COPY** to copy the connection summary. In the CLI, add `--diagnostics` to an online command. The CLI writes a startup snapshot to standard error and another snapshot when the command finishes, fails, or is cancelled, including failures during channel discovery.
+
+The summary includes the build version, operating system, architecture, resolved token kind, selected transport, initialization/fallback reason, last attempted request transport, last HTTP response status, and request totals. Opening diagnostics sends no extra requests. It excludes tokens, request headers, channel IDs, URLs, and message content. Counts cover the lifetime of the client; the last response may belong to an earlier request if the latest attempt failed before receiving a response.
+
+HttpCloak is enabled only on Windows. Other platforms, an explicit `DISCORDCHATEXPORTER_DISABLE_BROWSER_TRANSPORT` override, or a native initialization failure use HttpClient. Bot requests also use HttpClient. A startup snapshot shows the configured user-token transport until token detection completes; the last attempted request field records the transport actually used. These diagnostics do not establish why an account was flagged or guarantee protection from detection.
+
+When reporting a problem, include the summary, the operation being performed, approximately how long it ran, and the exact error or account action observed.
+
+Optional linked-channel lookups tolerate inaccessible channels (403/404). Required channel access and authentication failures still report errors. JSON exports retain reaction emoji and counts when the reactor list is unavailable due to a missing emoji (404 or error 10014); the unavailable users cannot be included.
+
 Welcome to the Frequently Asked Questions (FAQ) and Troubleshooting page!
 Here you'll find the answers to most of the questions related to **DiscordChatExporter** (DCE for short) and its core features.
 
