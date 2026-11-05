@@ -23,11 +23,14 @@ public sealed class DashboardContinueExportPickerTests
         method.Should().NotBeNull();
         var fileTypes = ((IReadOnlyList<FilePickerFileType>)method!.Invoke(null, null)!)
             .Should()
-            .ContainSingle()
+            .ContainSingle(type => type.Name == "Supported exports (JSON, HTML, CSV, SQLite)")
             .Subject;
 
         fileTypes.Name.Should().Be("Supported exports (JSON, HTML, CSV, SQLite)");
         fileTypes.Patterns.Should().BeEquivalentTo(["*.json", "*.html", "*.htm", "*.csv", "*.db"]);
+        ((IReadOnlyList<FilePickerFileType>)method.Invoke(null, null)!)
+            .Should()
+            .Contain(type => type.Patterns != null && type.Patterns.Contains("*"));
     }
 
     [Fact]

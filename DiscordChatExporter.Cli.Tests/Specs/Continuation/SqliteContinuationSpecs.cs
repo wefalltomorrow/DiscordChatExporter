@@ -25,6 +25,29 @@ public class SqliteContinuationSpecs : IDisposable
 
     public SqliteContinuationSpecs() => Directory.CreateDirectory(_dir);
 
+    [Theory]
+    [InlineData("archive.sqlite3")]
+    [InlineData("archive.html")]
+    public async Task Continuation_dispatch_uses_stored_sqlite_format_for_custom_extensions(
+        string fileName
+    )
+    {
+        var existing = await WriteDbAsync(fileName, (1001, "old"));
+        var incoming = await WriteDbAsync("new.db", (1002, "new"));
+        var cutoff = await ContinuationFormat.ReadCutoffAsync(existing, ExportFormat.Db);
+        var total = await ContinuationFormat.MergeAsync(
+            existing,
+            incoming,
+            cutoff,
+            DateTimeOffset.UnixEpoch,
+            ExportFormat.Db
+        );
+        total.Should().Be(2);
+        var merged = await ContinuationFormat.ReadCutoffAsync(existing, ExportFormat.Db);
+        merged.ExistingCount.Should().Be(2);
+        merged.Cutoff.Value.Should().Be(1002UL);
+    }
+
     public void Dispose()
     {
         try

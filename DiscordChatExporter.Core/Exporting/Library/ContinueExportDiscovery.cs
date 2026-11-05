@@ -82,7 +82,10 @@ public static class ContinueExportDiscovery
         if (entry.Partitioned)
             return ContinueSkipReason.Partitioned;
 
-        if (!ContinuationFormat.IsSupportedExtension(entry.File))
+        if (!Enum.TryParse<ExportFormat>(entry.Format, out var format) || !Enum.IsDefined(format))
+            return ContinueSkipReason.UnknownFormat;
+
+        if (!ContinuationFormat.IsSupported(format))
             return ContinueSkipReason.UnsupportedFormat;
 
         return null;

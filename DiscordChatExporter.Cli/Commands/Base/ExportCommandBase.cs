@@ -806,6 +806,7 @@ public abstract class ExportCommandBase : DiscordCommandBase
 
         var cutoff = await ContinuationFormat.ReadCutoffAsync(
             state.ExistingFilePath,
+            state.Format,
             cancellationToken
         );
 
@@ -854,6 +855,7 @@ public abstract class ExportCommandBase : DiscordCommandBase
                 tempPath,
                 cutoff,
                 DateTimeOffset.Now,
+                state.Format,
                 cancellationToken
             );
 
