@@ -65,6 +65,22 @@ public partial class DashboardViewModel : ViewModelBase
     private int _activeRateLimitPauseCount;
 
     private DiscordClient? _discord;
+
+    [RelayCommand]
+    private async Task ShowDiagnosticsAsync()
+    {
+        var summary =
+            _discord?.GetDiagnosticSummary() ?? LocalizationManager.DiagnosticsNoConnection;
+        var dialog = _viewModelManager.GetMessageBoxViewModel(
+            LocalizationManager.DiagnosticsTitle,
+            summary,
+            LocalizationManager.DiagnosticsCopyButton,
+            LocalizationManager.CloseButton
+        );
+        if (await _dialogManager.ShowDialogAsync(dialog) == true)
+            await SetClipboardTextAsync(summary);
+    }
+
     private IReadOnlyList<ChannelConnection> _exportableChannels = [];
 
     private ExportSetupViewModel? _lastExportSetup;

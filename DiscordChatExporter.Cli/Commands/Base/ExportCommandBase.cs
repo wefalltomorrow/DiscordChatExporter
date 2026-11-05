@@ -986,7 +986,7 @@ public abstract class ExportCommandBase : DiscordCommandBase
         IncrementalExportState? Incremental = null
     );
 
-    public override async ValueTask ExecuteAsync(IConsole console)
+    protected override async ValueTask ExecuteCoreAsync(IConsole console)
     {
         // Support Ukraine callout
         if (!IsUkraineSupportMessageDisabled)
@@ -1021,6 +1021,6 @@ public abstract class ExportCommandBase : DiscordCommandBase
             console.Output.WriteLine("");
         }
 
-        await base.ExecuteAsync(console);
+        await base.ExecuteCoreAsync(console);
     }
 }

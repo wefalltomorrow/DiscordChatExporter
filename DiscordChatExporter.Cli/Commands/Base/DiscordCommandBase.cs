@@ -34,6 +34,18 @@ public abstract class DiscordCommandBase : ICommand
     )]
     public bool ShouldRespectRateLimits { get; set; } = true;
 
+    [CommandOption(
+        "diagnostics",
+        Description = "Print transport, platform, and API request diagnostics to standard error."
+    )]
+    public bool ShowDiagnostics { get; set; }
+
+    protected void PrintDiagnostics(IConsole console)
+    {
+        if (ShowDiagnostics)
+            console.Error.WriteLine(Discord.GetDiagnosticSummary());
+    }
+
     internal static RateLimitPreference GetRateLimitPreference(bool shouldRespectRateLimits) =>
         shouldRespectRateLimits
             ? RateLimitPreference.RespectAll
@@ -43,7 +55,20 @@ public abstract class DiscordCommandBase : ICommand
     protected DiscordClient Discord =>
         field ??= new DiscordClient(Token, GetRateLimitPreference(ShouldRespectRateLimits));
 
-    public virtual ValueTask ExecuteAsync(IConsole console)
+    public async ValueTask ExecuteAsync(IConsole console)
+    {
+        PrintDiagnostics(console);
+        try
+        {
+            await ExecuteCoreAsync(console);
+        }
+        finally
+        {
+            PrintDiagnostics(console);
+        }
+    }
+
+    protected virtual ValueTask ExecuteCoreAsync(IConsole console)
     {
 #pragma warning disable CS0618
         // Warn if the bot option is used
