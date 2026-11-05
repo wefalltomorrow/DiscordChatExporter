@@ -52,8 +52,10 @@ public abstract class DiscordCommandBase : ICommand
             : RateLimitPreference.RespectForUserTokens;
 
     [field: AllowNull, MaybeNull]
-    protected DiscordClient Discord =>
-        field ??= new DiscordClient(Token, GetRateLimitPreference(ShouldRespectRateLimits));
+    protected DiscordClient Discord => field ??= CreateDiscordClient();
+
+    protected virtual DiscordClient CreateDiscordClient() =>
+        new(Token, GetRateLimitPreference(ShouldRespectRateLimits));
 
     public async ValueTask ExecuteAsync(IConsole console)
     {
