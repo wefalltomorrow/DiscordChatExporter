@@ -41,7 +41,8 @@ User-token exports are intentionally paced more conservatively than upstream:
 - Exact 403/404 requests are cached for the remainder of the run to avoid repeated unavailable lookups.
 - Guild channels, roles, members, and channel/thread metadata are cached across the export.
 - Concurrent duplicate metadata lookups are collapsed into a single request.
-- A local circuit breaker stops the run after an abnormal burst of HTTP 401/403/429 responses.
+- A local circuit breaker stops further requests from the client after an abnormal burst of HTTP 401/403/429 responses.
+- Account verification required (40002), Cloudflare blocking (40333), or lost authentication also stop further requests from the client, including queued channel requests. Review the account or access issue before starting another export. Ordinary missing channel permissions remain scoped to that channel. These stops respond to errors; they do not guarantee prevention of account detection or restrictions.
 - Export summaries report API request counts, 429s, advisory pauses, avoided unavailable requests, and metadata cache hits.
 
 ### Archive and search tools
