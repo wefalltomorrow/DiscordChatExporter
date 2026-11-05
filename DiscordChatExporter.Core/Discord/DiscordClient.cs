@@ -482,6 +482,10 @@ public class DiscordClient(
             return CreateCachedUnavailableResponse(url, cachedStatusCode);
         }
 
+        // Keep the slot through response processing and retries. A queued user
+        // request must not overtake a response that is establishing a cooldown.
+        var requestGate = tokenKind == TokenKind.User ? _userRequestGate : _botRequestGate;
+        await requestGate.WaitAsync(cancellationToken);
         var resilienceContext = ResilienceContextPool.Shared.Get(cancellationToken);
         resilienceContext.Properties.Set(Http.RateLimitDelayHandlerKey, WaitForHardRateLimitAsync);
 
@@ -508,65 +512,54 @@ public class DiscordClient(
                         );
                     }
 
-                    var requestGate =
-                        tokenKind == TokenKind.User ? _userRequestGate : _botRequestGate;
-
-                    await requestGate.WaitAsync(innerContext.CancellationToken);
                     HttpResponseMessage response;
+                    ThrowIfRequestsStopped();
+                    if (tokenKind == TokenKind.User)
+                        await WaitForUserRequestStartAsync(innerContext.CancellationToken);
+                    ThrowIfRequestsStopped();
+
+                    Interlocked.Increment(ref _apiRequestCount);
+
+                    if (tokenKind == TokenKind.User && _browserTransport.Session is not null)
+                    {
+                        Volatile.Write(ref _lastRequestTransport, "HttpCloak");
+                        var cloakResponse = await _browserTransport.Session.GetAsync(
+                            requestUri.ToString(),
+                            headers: headers,
+                            cancellationToken: innerContext.CancellationToken
+                        );
+
+                        response = ToHttpResponseMessage(cloakResponse, requestUri);
+                    }
+                    else
+                    {
+                        Volatile.Write(ref _lastRequestTransport, "HttpClient");
+                        using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+                        foreach (var (name, value) in headers)
+                            request.Headers.TryAddWithoutValidation(name, value);
+
+                        response = await _httpClient.SendAsync(
+                            request,
+                            HttpCompletionOption.ResponseHeadersRead,
+                            innerContext.CancellationToken
+                        );
+                    }
+
+                    // Inspect before releasing the user request slot: queued channels
+                    // must observe a stop before they can send another request.
                     try
                     {
-                        ThrowIfRequestsStopped();
-                        if (tokenKind == TokenKind.User)
-                            await WaitForUserRequestStartAsync(innerContext.CancellationToken);
-                        ThrowIfRequestsStopped();
-
-                        Interlocked.Increment(ref _apiRequestCount);
-
-                        if (tokenKind == TokenKind.User && _browserTransport.Session is not null)
-                        {
-                            Volatile.Write(ref _lastRequestTransport, "HttpCloak");
-                            var cloakResponse = await _browserTransport.Session.GetAsync(
-                                requestUri.ToString(),
-                                headers: headers,
-                                cancellationToken: innerContext.CancellationToken
-                            );
-
-                            response = ToHttpResponseMessage(cloakResponse, requestUri);
-                        }
-                        else
-                        {
-                            Volatile.Write(ref _lastRequestTransport, "HttpClient");
-                            using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
-                            foreach (var (name, value) in headers)
-                                request.Headers.TryAddWithoutValidation(name, value);
-
-                            response = await _httpClient.SendAsync(
-                                request,
-                                HttpCompletionOption.ResponseHeadersRead,
-                                innerContext.CancellationToken
-                            );
-                        }
-
-                        // Inspect before releasing the user request slot: queued channels
-                        // must observe a stop before they can send another request.
-                        try
-                        {
-                            Volatile.Write(ref _lastResponseStatus, (int)response.StatusCode);
-                            await CheckAccountRestrictionAsync(
-                                response,
-                                innerContext.CancellationToken
-                            );
-                            RecordInvalidRequestOrThrow(response);
-                        }
-                        catch
-                        {
-                            response.Dispose();
-                            throw;
-                        }
+                        Volatile.Write(ref _lastResponseStatus, (int)response.StatusCode);
+                        await CheckAccountRestrictionAsync(
+                            response,
+                            innerContext.CancellationToken
+                        );
+                        RecordInvalidRequestOrThrow(response);
                     }
-                    finally
+                    catch
                     {
-                        requestGate.Release();
+                        response.Dispose();
+                        throw;
                     }
 
                     if (response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.NotFound)
@@ -596,7 +589,7 @@ public class DiscordClient(
 
                             var delay = (resetAfterDelay.Value + TimeSpan.FromSeconds(1)).Clamp(
                                 TimeSpan.Zero,
-                                TimeSpan.FromSeconds(60)
+                                TimeSpan.MaxValue
                             );
 
                             try
@@ -622,6 +615,7 @@ public class DiscordClient(
         finally
         {
             ResilienceContextPool.Shared.Return(resilienceContext);
+            requestGate.Release();
         }
     }
 
@@ -922,6 +916,10 @@ public class DiscordClient(
             return TryParseMessageSearchTotal(statusCode, response);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (DiscordChatExporterException ex) when (ex.IsFatal)
         {
             throw;
         }
