@@ -19,9 +19,9 @@ public partial class ExportGuildCommand : ExportCommandBase
     [CommandOption("include-vc", Description = "Include voice channels.")]
     public bool IncludeVoiceChannels { get; set; } = true;
 
-    public override async ValueTask ExecuteAsync(IConsole console)
+    protected override async ValueTask ExecuteCoreAsync(IConsole console)
     {
-        await base.ExecuteAsync(console);
+        await base.ExecuteCoreAsync(console);
 
         var cancellationToken = console.RegisterCancellationHandler();
         var channels = new List<Channel>();

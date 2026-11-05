@@ -106,6 +106,11 @@ with `--incremental` instead of `--resume`:
 Incremental mode restores the original continuation-sensitive settings from `manifest.json` and
 appends only newer messages. See [Using the CLI](.docs/Using-the-CLI.md) for details.
 
+New exports record media directories inside the export folder as relative paths. Move the archive,
+its media folder, and `manifest.json` together to keep resume and incremental exports portable.
+Incremental media links are relative to the final archive, including when temporary files are used.
+External media directories and absolute paths recorded by older versions retain their original locations.
+
 For very long exports, `scripts/Export-Guild-Resilient.ps1` wraps the same `exportguild --resume` workflow with bounded process-level retries.
 
 ## Reporting bugs

@@ -1,7 +1,12 @@
 using System;
 using System.Buffers.Binary;
+using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
+using System.Threading.Tasks;
+using CliFx.Infrastructure;
+using DiscordChatExporter.Cli.Commands.Base;
 using DiscordChatExporter.Core.Discord;
 using FluentAssertions;
 using Xunit;
@@ -10,6 +15,100 @@ namespace DiscordChatExporter.Cli.Tests.Specs;
 
 public class ClientPropertiesSpecs
 {
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(1, true)]
+    [InlineData(2, true)]
+    [InlineData(0, false)]
+    public async Task Cli_diagnostics_use_stderr_and_survive_failure_and_cancellation(
+        int outcome,
+        bool diagnostics
+    )
+    {
+        using var output = new MemoryStream();
+        using var error = new MemoryStream();
+        using var console = new FakeConsole(Stream.Null, output, error);
+        using var command = new DiagnosticTestCommand(outcome)
+        {
+            Token = "private-token",
+            ShowDiagnostics = diagnostics,
+        };
+        var act = async () => await command.ExecuteAsync(console);
+        if (outcome == 1)
+            await act.Should().ThrowAsync<InvalidOperationException>();
+        else if (outcome == 2)
+            await act.Should().ThrowAsync<OperationCanceledException>();
+        else
+            await act.Should().NotThrowAsync();
+        console.Error.Flush();
+        console.Output.Flush();
+        var text = Encoding.UTF8.GetString(error.ToArray());
+        text.Split("Core version:").Length.Should().Be(diagnostics ? 3 : 1);
+        text.Should().NotContain("private-token");
+        Encoding.UTF8.GetString(output.ToArray()).Should().NotContain("Core version:");
+    }
+
+    private sealed class DiagnosticTestCommand(int outcome) : DiscordCommandBase, IDisposable
+    {
+        protected override ValueTask ExecuteCoreAsync(IConsole console) =>
+            outcome switch
+            {
+                1 => throw new InvalidOperationException("Test failure"),
+                2 => throw new OperationCanceledException(),
+                _ => ValueTask.CompletedTask,
+            };
+
+        public void Dispose() => Discord.Dispose();
+    }
+
+    [Theory]
+    [InlineData(false, null, "supported only on Windows")]
+    [InlineData(true, "true", "disabled by the environment")]
+    public void Disabled_transport_does_not_initialize_native_session(
+        bool windows,
+        string? disabled,
+        string reason
+    )
+    {
+        var called = false;
+        var result = DiscordClient.InitializeBrowserTransport(
+            windows,
+            disabled,
+            () =>
+            {
+                called = true;
+                return new object();
+            }
+        );
+        called.Should().BeFalse();
+        result.Session.Should().BeNull();
+        result.Reason.Should().Contain(reason);
+    }
+
+    [Fact]
+    public void Native_initialization_failure_reports_type_without_private_exception_text()
+    {
+        var result = DiscordClient.InitializeBrowserTransport<object>(
+            true,
+            null,
+            () => throw new DllNotFoundException("private-path-and-token")
+        );
+        result.Session.Should().BeNull();
+        result
+            .Reason.Should()
+            .Contain(nameof(DllNotFoundException))
+            .And.NotContain("private-path-and-token");
+    }
+
+    [Fact]
+    public void Successful_native_initialization_retains_session()
+    {
+        var session = new object();
+        var result = DiscordClient.InitializeBrowserTransport(true, null, () => session);
+        result.Session.Should().BeSameAs(session);
+        result.Reason.Should().Contain("successfully");
+    }
+
     [Fact]
     public void I_can_encode_official_web_super_properties_with_the_expected_shape()
     {

@@ -65,6 +65,22 @@ public partial class DashboardViewModel : ViewModelBase
     private int _activeRateLimitPauseCount;
 
     private DiscordClient? _discord;
+
+    [RelayCommand]
+    private async Task ShowDiagnosticsAsync()
+    {
+        var summary =
+            _discord?.GetDiagnosticSummary() ?? LocalizationManager.DiagnosticsNoConnection;
+        var dialog = _viewModelManager.GetMessageBoxViewModel(
+            LocalizationManager.DiagnosticsTitle,
+            summary,
+            LocalizationManager.DiagnosticsCopyButton,
+            LocalizationManager.CloseButton
+        );
+        if (await _dialogManager.ShowDialogAsync(dialog) == true)
+            await SetClipboardTextAsync(summary);
+    }
+
     private IReadOnlyList<ChannelConnection> _exportableChannels = [];
 
     private ExportSetupViewModel? _lastExportSetup;
@@ -1421,7 +1437,12 @@ public partial class DashboardViewModel : ViewModelBase
             try
             {
                 cutoff = await RunContinuationWorkOffUiThreadAsync(
-                    () => ContinuationFormat.ReadCutoffAsync(entry.FilePath, cancellationToken),
+                    () =>
+                        ContinuationFormat.ReadCutoffAsync(
+                            entry.FilePath,
+                            entry.Format,
+                            cancellationToken
+                        ),
                     cancellationToken
                 );
             }
@@ -1479,14 +1500,6 @@ public partial class DashboardViewModel : ViewModelBase
         if (string.IsNullOrWhiteSpace(filePath))
             return null;
 
-        if (!ContinuationFormat.IsSupportedExtension(filePath))
-        {
-            _snackbarManager.Notify(
-                LocalizationManager.ContinueExportFormatUnsupportedMessage.TrimEnd('.')
-            );
-            return null;
-        }
-
         if (IsPartitionedExportPath(filePath))
         {
             _snackbarManager.Notify(
@@ -1496,10 +1509,12 @@ public partial class DashboardViewModel : ViewModelBase
         }
 
         ContinuationCutoff cutoff;
+        ExportFormat format;
         try
         {
+            format = await ContinuationFormat.ResolveFormatAsync(filePath, cancellationToken);
             cutoff = await RunContinuationWorkOffUiThreadAsync(
-                () => ContinuationFormat.ReadCutoffAsync(filePath, cancellationToken),
+                () => ContinuationFormat.ReadCutoffAsync(filePath, format, cancellationToken),
                 cancellationToken
             );
         }
@@ -1537,7 +1552,7 @@ public partial class DashboardViewModel : ViewModelBase
             channel.IsDirect ? Guild.DirectMessages : selectedGuild,
             filePath,
             Path.GetDirectoryName(filePath) ?? string.Empty,
-            ContinuationFormat.FormatFor(filePath),
+            format,
             cutoff
         );
     }
@@ -1641,6 +1656,7 @@ public partial class DashboardViewModel : ViewModelBase
                         tempPath,
                         target.Cutoff,
                         DateTimeOffset.Now,
+                        target.Format,
                         cancellationToken
                     ),
                 cancellationToken
@@ -1838,6 +1854,10 @@ public partial class DashboardViewModel : ViewModelBase
             new FilePickerFileType("Supported exports (JSON, HTML, CSV, SQLite)")
             {
                 Patterns = ["*.json", "*.html", "*.htm", "*.csv", "*.db"],
+            },
+            new FilePickerFileType("All files (including custom export extensions)")
+            {
+                Patterns = ["*"],
             },
         ];
 
