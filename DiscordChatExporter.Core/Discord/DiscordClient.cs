@@ -200,31 +200,37 @@ public class DiscordClient(
         CancellationToken cancellationToken = default
     )
     {
-        DateTimeOffset observedPauseUntil;
-        TimeSpan delay;
-
-        lock (_rateLimitSync)
+        while (true)
         {
-            observedPauseUntil = _sharedRateLimitUntilUtc;
-            delay = observedPauseUntil - DateTimeOffset.UtcNow;
-        }
+            ThrowIfRequestsStopped();
+            DateTimeOffset observedPauseUntil;
+            TimeSpan delay;
 
-        if (delay <= TimeSpan.Zero)
-            return;
+            lock (_rateLimitSync)
+            {
+                observedPauseUntil = _sharedRateLimitUntilUtc;
+                delay = observedPauseUntil - DateTimeOffset.UtcNow;
+            }
 
-        var completed = false;
-        RateLimitChanged?.Invoke(this, new RateLimitState(true, delay));
-        try
-        {
-            await _delayAsync(delay, cancellationToken);
-            completed = true;
-        }
-        finally
-        {
-            if (completed)
-                ClearSharedRateLimit(observedPauseUntil);
+            if (delay <= TimeSpan.Zero)
+                return;
 
-            RateLimitChanged?.Invoke(this, new RateLimitState(false, TimeSpan.Zero));
+            var completed = false;
+            RateLimitChanged?.Invoke(this, new RateLimitState(true, delay));
+            try
+            {
+                await _delayAsync(delay, cancellationToken);
+                completed = true;
+            }
+            finally
+            {
+                if (completed)
+                    ClearSharedRateLimit(observedPauseUntil);
+
+                RateLimitChanged?.Invoke(this, new RateLimitState(false, TimeSpan.Zero));
+            }
+            // Another in-flight response may have extended the deadline during this wait.
+            // Re-read it before allowing a new request to leave.
         }
     }
 
@@ -251,6 +257,7 @@ public class DiscordClient(
 
             RateLimitChanged?.Invoke(this, new RateLimitState(false, TimeSpan.Zero));
         }
+        await WaitForSharedRateLimitAsync(cancellationToken);
     }
 
     internal static TimeSpan GetAdaptiveHardRateLimitCushion(int recentRateLimitCount) =>
@@ -581,22 +588,15 @@ public class DiscordClient(
                             .Headers.TryGetValue("X-RateLimit-Remaining")
                             ?.Pipe(v => int.ParseOrNull(v, CultureInfo.InvariantCulture));
 
-                        var resetAfterDelay = response
-                            .Headers.TryGetValue("X-RateLimit-Reset-After")
-                            ?.Pipe(v => double.ParseOrNull(v, CultureInfo.InvariantCulture))
-                            ?.Pipe(TimeSpan.FromSeconds);
-
-                        if (remainingRequestCount <= 0 && resetAfterDelay is not null)
+                        if (remainingRequestCount <= 0)
                         {
-                            Interlocked.Increment(ref _advisoryPauseCount);
-
-                            var delay = (resetAfterDelay.Value + TimeSpan.FromSeconds(1)).Clamp(
-                                TimeSpan.Zero,
-                                TimeSpan.MaxValue
-                            );
-
                             try
                             {
+                                var delay =
+                                    Http.ParseRateLimitDelay(
+                                        response.Headers.TryGetValue("X-RateLimit-Reset-After")
+                                    ) + TimeSpan.FromSeconds(1);
+                                Interlocked.Increment(ref _advisoryPauseCount);
                                 await response.Content.LoadIntoBufferAsync(
                                     innerContext.CancellationToken
                                 );
@@ -627,6 +627,12 @@ public class DiscordClient(
             }
 
             return result;
+        }
+        catch (InvalidRateLimitException)
+        {
+            throw StopRequests(
+                "Discord returned an unusable rate-limit duration. Further requests from this client have been stopped."
+            );
         }
         finally
         {

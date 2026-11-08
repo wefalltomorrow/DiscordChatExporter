@@ -16,6 +16,7 @@ $Cases = @(
     @{ Name = 'exhausted'; Code = 1; Text = 'Discord rate-limit retries were exhausted. Further requests from this client have been stopped.'; Calls = 1; Fails = $true },
     @{ Name = 'authentication'; Code = 1; Text = 'Authentication token is invalid.'; Calls = 1; Fails = $true },
     @{ Name = 'legacy-rate-limit'; Code = 0; Text = 'Export failed. Too many requests.'; Calls = 1; Fails = $true },
+    @{ Name = 'invalid-timing'; Code = 3; Text = 'Discord returned an unusable rate-limit duration. Further requests from this client have been stopped.'; Calls = 1; Fails = $true },
     @{ Name = 'success'; Code = 0; Text = ''; Calls = 1; Fails = $false },
     @{ Name = 'transient'; Code = 1; Text = 'Connection timed out.'; Calls = 2; Fails = $false },
     @{ Name = 'partial'; Code = 0; Text = 'Export failed. Connection timed out.'; Calls = 2; Fails = $false }
