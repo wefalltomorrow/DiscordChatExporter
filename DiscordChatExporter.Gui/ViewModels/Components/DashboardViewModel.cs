@@ -65,6 +65,7 @@ public partial class DashboardViewModel : ViewModelBase
     private int _activeRateLimitPauseCount;
 
     private DiscordClient? _discord;
+    private string? _discordToken;
 
     [RelayCommand]
     private async Task ShowDiagnosticsAsync()
@@ -258,16 +259,26 @@ public partial class DashboardViewModel : ViewModelBase
         return Task.CompletedTask;
     }
 
-    private void SetDiscordClient(DiscordClient discord)
+    private DiscordClient GetOrCreateDiscordClient(string token)
     {
+        // Refreshing the same account must preserve stops, cooldowns, and request history.
+        if (_discord is not null && string.Equals(_discordToken, token, StringComparison.Ordinal))
+        {
+            _discord.RateLimitPreference = _settingsService.RateLimitPreference;
+            return _discord;
+        }
+
+        var discord = new DiscordClient(token, _settingsService.RateLimitPreference);
         var previous = _discord;
         if (previous is not null)
             previous.RateLimitChanged -= HandleRateLimitChanged;
 
         _discord = discord;
+        _discordToken = token;
         _discord.RateLimitChanged += HandleRateLimitChanged;
 
         previous?.Dispose();
+        return discord;
     }
 
     private void HandleRateLimitChanged(object? sender, RateLimitState state)
@@ -339,8 +350,7 @@ public partial class DashboardViewModel : ViewModelBase
             SelectedChannels.Clear();
             ClearFailedExportState();
 
-            var discord = new DiscordClient(token, _settingsService.RateLimitPreference);
-            SetDiscordClient(discord);
+            var discord = GetOrCreateDiscordClient(token);
             _settingsService.LastToken = token;
 
             var guilds = await discord.GetUserGuildsAsync();

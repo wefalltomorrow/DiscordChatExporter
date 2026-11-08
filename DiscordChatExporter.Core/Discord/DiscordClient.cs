@@ -128,6 +128,8 @@ public class DiscordClient(
     // Stable state for callers that must not restart a stopped client automatically.
     public string? RequestStopReason => Volatile.Read(ref _requestStopReason);
 
+    public RateLimitPreference RateLimitPreference { get; set; } = rateLimitPreference;
+
     internal DiscordClient(
         string tokenOverride,
         RateLimitPreference rateLimitPreferenceOverride,
@@ -581,7 +583,7 @@ public class DiscordClient(
                     // they are typically stricter than the actual server-enforced limits.
                     if (
                         response.StatusCode != HttpStatusCode.TooManyRequests
-                        && rateLimitPreference.IsRespectedFor(tokenKind)
+                        && RateLimitPreference.IsRespectedFor(tokenKind)
                     )
                     {
                         var remainingRequestCount = response

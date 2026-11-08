@@ -38,6 +38,7 @@ User-token exports are intentionally paced more conservatively than upstream:
 - Advisory rate-limit headers are always respected for user tokens.
 - HTTP 429 handling prefers Discord's `retry_after` value and applies progressively larger local cooldowns when rate limits repeat.
 - Rate-limit pauses are coordinated across the client.
+- Refreshing the GUI with the same token preserves request stops, cooldowns, and cached request history. Rate-limit preference changes apply without resetting the client. Switching credentials or restarting the application starts a new session; stops are not persisted across sessions.
 - Exact 403/404 requests are cached for the remainder of the run to avoid repeated unavailable lookups.
 - Guild channels, roles, members, and channel/thread metadata are cached across the export.
 - Concurrent duplicate metadata lookups are collapsed into a single request.
