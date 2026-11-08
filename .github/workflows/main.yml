@@ -87,6 +87,10 @@ jobs:
           --filter "FullyQualifiedName~ClientPropertiesSpecs|FullyQualifiedName~JsonRetrySpecs|FullyQualifiedName~Conversion|FullyQualifiedName~Continuation|FullyQualifiedName~ContinueExportDiscoverySpecs|FullyQualifiedName~Manifest|FullyQualifiedName~EtaEstimatorSpecs|FullyQualifiedName~ExportProgressSpecs|FullyQualifiedName~ExportFormatSpecs|FullyQualifiedName~ExportSummarizerSpecs|FullyQualifiedName~ExportCatalogBuilderSpecs|FullyQualifiedName~ExportContextAssetSpecs|FullyQualifiedName~DiscordDataParsingSpecs|FullyQualifiedName~DiscordClientMessageRangeSpecs|FullyQualifiedName~RateLimitSpecs|FullyQualifiedName~CountMessagesParsingSpecs|FullyQualifiedName~MessageCountEstimatorSpecs|FullyQualifiedName~MessageFilterFactorySpecs|FullyQualifiedName~RecentExportDirsSpecs|FullyQualifiedName~SqliteMessageWriterSpecs|FullyQualifiedName~SqliteExportReaderSpecs"
           --logger "GitHubActions;summary.includePassedTests=true;summary.includeSkippedTests=true"
 
+      - name: Run offline resilient wrapper tests
+        shell: pwsh
+        run: ./scripts/tests/Test-ResilientWrapper.ps1
+
       - name: Run GUI tests
         run: >
           dotnet test DiscordChatExporter.Gui.Tests

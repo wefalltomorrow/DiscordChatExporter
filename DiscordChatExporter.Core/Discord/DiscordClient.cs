@@ -125,6 +125,9 @@ public class DiscordClient(
 
     public event EventHandler<RateLimitState>? RateLimitChanged;
 
+    // Stable state for callers that must not restart a stopped client automatically.
+    public string? RequestStopReason => Volatile.Read(ref _requestStopReason);
+
     internal DiscordClient(
         string tokenOverride,
         RateLimitPreference rateLimitPreferenceOverride,
@@ -491,7 +494,7 @@ public class DiscordClient(
 
         try
         {
-            return await Http.ResponseResiliencePipeline.ExecuteAsync(
+            var result = await Http.ResponseResiliencePipeline.ExecuteAsync(
                 async innerContext =>
                 {
                     ThrowIfRequestsStopped();
@@ -611,6 +614,19 @@ public class DiscordClient(
                 },
                 resilienceContext
             );
+
+            // Polly does not invoke OnRetry for the terminal response. Do not let
+            // another channel start a fresh retry budget after persistent 429s.
+            if (result.StatusCode == HttpStatusCode.TooManyRequests)
+            {
+                result.Dispose();
+                RecordHardRateLimit();
+                throw StopRequests(
+                    "Discord rate-limit retries were exhausted. Further requests from this client have been stopped."
+                );
+            }
+
+            return result;
         }
         finally
         {

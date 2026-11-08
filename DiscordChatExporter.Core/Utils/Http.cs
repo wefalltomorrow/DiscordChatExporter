@@ -64,7 +64,10 @@ public static class Http
                 return null;
 
             using var json = JsonDocument.Parse(payload);
-            if (!json.RootElement.TryGetProperty("retry_after", out var retryAfterElement))
+            if (
+                json.RootElement.ValueKind != JsonValueKind.Object
+                || !json.RootElement.TryGetProperty("retry_after", out var retryAfterElement)
+            )
                 return null;
 
             double retryAfterSeconds;
@@ -128,6 +131,10 @@ public static class Http
 
             if (response.Headers.RetryAfter?.Delta is { } headerRetryAfter)
                 return headerRetryAfter + TimeSpan.FromSeconds(1);
+
+            if (response.Headers.RetryAfter?.Date is { } retryAt)
+                return (retryAt - DateTimeOffset.UtcNow).Clamp(TimeSpan.Zero, TimeSpan.MaxValue)
+                    + TimeSpan.FromSeconds(1);
 
             var resetAfterSeconds = response
                 .Headers.TryGetValue("X-RateLimit-Reset-After")

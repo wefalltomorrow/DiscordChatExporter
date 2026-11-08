@@ -11,6 +11,9 @@ namespace DiscordChatExporter.Cli.Commands.Base;
 
 public abstract class DiscordCommandBase : ICommand
 {
+    // Public process contract used by scripts/Export-Guild-Resilient.ps1.
+    public const int RequestsStoppedExitCode = 3;
+
     [CommandOption(
         "token",
         't',
@@ -63,6 +66,14 @@ public abstract class DiscordCommandBase : ICommand
         try
         {
             await ExecuteCoreAsync(console);
+        }
+        catch (Exception ex) when (Discord.RequestStopReason is not null)
+        {
+            throw new CommandException(
+                Discord.RequestStopReason,
+                exitCode: RequestsStoppedExitCode,
+                innerException: ex
+            );
         }
         finally
         {
