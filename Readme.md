@@ -38,10 +38,16 @@ User-token exports are intentionally paced more conservatively than upstream:
 - Advisory rate-limit headers are always respected for user tokens.
 - HTTP 429 handling prefers Discord's `retry_after` value and applies progressively larger local cooldowns when rate limits repeat.
 - Rate-limit pauses are coordinated across the client.
+- Refreshing the GUI with the same token preserves request stops, cooldowns, and cached request history. Rate-limit preference changes apply without resetting the client. Switching credentials or restarting the application starts a new session; stops are not persisted across sessions.
 - Exact 403/404 requests are cached for the remainder of the run to avoid repeated unavailable lookups.
 - Guild channels, roles, members, and channel/thread metadata are cached across the export.
 - Concurrent duplicate metadata lookups are collapsed into a single request.
-- A local circuit breaker stops the run after an abnormal burst of HTTP 401/403/429 responses.
+- A local circuit breaker stops further requests from the client after an abnormal burst of HTTP 401/403/429 responses.
+- User-token requests retain their request slot through retries and cooldowns so queued requests cannot bypass a newly received limit. Server-requested advisory waits are honored in full, including waits longer than 60 seconds.
+- Exhausting HTTP 429 retries stops subsequent requests from that client. Retry delays also support HTTP-date headers and non-object JSON error bodies.
+- The CLI exits with code **3** when requests have been stopped. Automation must not restart it automatically after this code. The resilient PowerShell wrapper respects this exit code and recognizes restriction/rate-limit errors from older builds, while retaining retries for ordinary connection failures.
+- An explicitly unusable rate-limit duration stops the client instead of falling back to a short retry. This includes negative/nonfinite values, missing reset timing when an advisory bucket is exhausted, and waits beyond the supported timer range. Existing waiters honor cooldown extensions from other in-flight requests.
+- Account verification required (40002), Cloudflare blocking (40333), or lost authentication also stop further requests from the client, including queued channel requests. Review the account or access issue before starting another export. Ordinary missing channel permissions remain scoped to that channel. These stops respond to errors; they do not guarantee prevention of account detection or restrictions.
 - Export summaries report API request counts, 429s, advisory pauses, avoided unavailable requests, and metadata cache hits.
 
 ### Archive and search tools

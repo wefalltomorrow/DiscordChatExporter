@@ -2,6 +2,12 @@ name: main
 
 on:
   workflow_dispatch:
+    inputs:
+      run_live_tests:
+        description: Run tests that access Discord using the configured account token
+        type: boolean
+        required: false
+        default: false
   push:
     branches:
       - prime
@@ -10,6 +16,7 @@ on:
   pull_request:
     branches:
       - prime
+      - "integration/**"
     types:
       - opened
       - synchronize
@@ -60,17 +67,15 @@ jobs:
         run: echo "::error title=Bad formatting::Formatting issues detected. Please build the solution locally to fix them."
 
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
 
     permissions:
       contents: read
-
-    # Fork CI stays useful without secrets: all deterministic/unit tests run on PRs,
-    # while live Discord tests and coverage upload are enabled only when configured.
-    env:
-      DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
-      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
     steps:
       - name: Checkout
@@ -87,14 +92,35 @@ jobs:
           --filter "FullyQualifiedName~ClientPropertiesSpecs|FullyQualifiedName~JsonRetrySpecs|FullyQualifiedName~Conversion|FullyQualifiedName~Continuation|FullyQualifiedName~ContinueExportDiscoverySpecs|FullyQualifiedName~Manifest|FullyQualifiedName~EtaEstimatorSpecs|FullyQualifiedName~ExportProgressSpecs|FullyQualifiedName~ExportFormatSpecs|FullyQualifiedName~ExportSummarizerSpecs|FullyQualifiedName~ExportCatalogBuilderSpecs|FullyQualifiedName~ExportContextAssetSpecs|FullyQualifiedName~DiscordDataParsingSpecs|FullyQualifiedName~DiscordClientMessageRangeSpecs|FullyQualifiedName~RateLimitSpecs|FullyQualifiedName~CountMessagesParsingSpecs|FullyQualifiedName~MessageCountEstimatorSpecs|FullyQualifiedName~MessageFilterFactorySpecs|FullyQualifiedName~RecentExportDirsSpecs|FullyQualifiedName~SqliteMessageWriterSpecs|FullyQualifiedName~SqliteExportReaderSpecs"
           --logger "GitHubActions;summary.includePassedTests=true;summary.includeSkippedTests=true"
 
+      - name: Run offline resilient wrapper tests
+        shell: pwsh
+        run: ./scripts/tests/Test-ResilientWrapper.ps1
+
       - name: Run GUI tests
         run: >
           dotnet test DiscordChatExporter.Gui.Tests
           -p:CSharpier_Bypass=true
           --configuration Release
 
+  live-test:
+    # Account access is never implied by a push, release, or validation dispatch.
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_live_tests }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      - name: Require account token
+        if: ${{ env.DISCORD_TOKEN == '' }}
+        run: echo "::error::Live tests require a configured DISCORD_TOKEN." && exit 1
       - name: Run live-token CLI tests
-        if: ${{ github.event_name != 'pull_request' && env.DISCORD_TOKEN != '' }}
         run: >
           dotnet test DiscordChatExporter.Cli.Tests
           -p:CSharpier_Bypass=true
@@ -106,7 +132,7 @@ jobs:
           DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
 
       - name: Upload coverage
-        if: ${{ github.event_name != 'pull_request' && env.CODECOV_TOKEN != '' }}
+        if: ${{ env.CODECOV_TOKEN != '' }}
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -177,6 +203,9 @@ jobs:
 
           Copy-Item -LiteralPath 'License.txt' -Destination (Join-Path $publishDir 'License.txt') -Force
           Copy-Item -LiteralPath 'NOTICE' -Destination (Join-Path $publishDir 'NOTICE') -Force
+          if ('${{ matrix.app }}' -eq 'DiscordChatExporter.Cli') {
+            Copy-Item -LiteralPath 'scripts/Export-Guild-Resilient.ps1' -Destination $publishDir -Force
+          }
 
           foreach ($requiredFile in @('License.txt', 'NOTICE')) {
             if (-not (Test-Path -LiteralPath (Join-Path $publishDir $requiredFile) -PathType Leaf)) {
@@ -192,7 +221,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    if: ${{ github.ref_type == 'tag' }}
+    if: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}
 
     needs:
       - format

@@ -50,7 +50,11 @@ jobs:
         run: dotnet build -t:CSharpierFormat --configuration Release --no-restore
 
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -64,8 +68,11 @@ jobs:
           dotnet test DiscordChatExporter.Cli.Tests
           -p:CSharpier_Bypass=true
           --configuration Release
-          --filter "FullyQualifiedName~ClientPropertiesSpecs|FullyQualifiedName~JsonRetrySpecs|FullyQualifiedName~Conversion|FullyQualifiedName~Continuation|FullyQualifiedName~Manifest|FullyQualifiedName~EtaEstimatorSpecs|FullyQualifiedName~ExportProgressSpecs|FullyQualifiedName~ExportFormatSpecs|FullyQualifiedName~ExportSummarizerSpecs|FullyQualifiedName~ExportCatalogBuilderSpecs|FullyQualifiedName~ExportContextAssetSpecs|FullyQualifiedName~DiscordDataParsingSpecs|FullyQualifiedName~DiscordClientMessageRangeSpecs|FullyQualifiedName~RateLimitSpecs|FullyQualifiedName~CountMessagesParsingSpecs|FullyQualifiedName~MessageCountEstimatorSpecs|FullyQualifiedName~MessageFilterFactorySpecs|FullyQualifiedName~RecentExportDirsSpecs|FullyQualifiedName~SqliteMessageWriterSpecs|FullyQualifiedName~SqliteExportReaderSpecs"
+          --filter "FullyQualifiedName~ClientPropertiesSpecs|FullyQualifiedName~JsonRetrySpecs|FullyQualifiedName~Conversion|FullyQualifiedName~Continuation|FullyQualifiedName~ContinueExportDiscoverySpecs|FullyQualifiedName~Manifest|FullyQualifiedName~EtaEstimatorSpecs|FullyQualifiedName~ExportProgressSpecs|FullyQualifiedName~ExportFormatSpecs|FullyQualifiedName~ExportSummarizerSpecs|FullyQualifiedName~ExportCatalogBuilderSpecs|FullyQualifiedName~ExportContextAssetSpecs|FullyQualifiedName~DiscordDataParsingSpecs|FullyQualifiedName~DiscordClientMessageRangeSpecs|FullyQualifiedName~RateLimitSpecs|FullyQualifiedName~CountMessagesParsingSpecs|FullyQualifiedName~MessageCountEstimatorSpecs|FullyQualifiedName~MessageFilterFactorySpecs|FullyQualifiedName~RecentExportDirsSpecs|FullyQualifiedName~SqliteMessageWriterSpecs|FullyQualifiedName~SqliteExportReaderSpecs"
           --logger "GitHubActions;summary.includePassedTests=true;summary.includeSkippedTests=true"
+      - name: Run offline resilient wrapper tests
+        shell: pwsh
+        run: ./scripts/tests/Test-ResilientWrapper.ps1
       - name: Run GUI tests
         run: >
           dotnet test DiscordChatExporter.Gui.Tests
@@ -123,6 +130,9 @@ jobs:
           Get-ChildItem -LiteralPath $publishDir -Recurse -Filter '*.pdb' -File | Remove-Item -Force
           Copy-Item -LiteralPath 'License.txt' -Destination (Join-Path $publishDir 'License.txt') -Force
           Copy-Item -LiteralPath 'NOTICE' -Destination (Join-Path $publishDir 'NOTICE') -Force
+          if ('${{ matrix.app }}' -eq 'DiscordChatExporter.Cli') {
+            Copy-Item -LiteralPath 'scripts/Export-Guild-Resilient.ps1' -Destination $publishDir -Force
+          }
       - name: Upload app binaries
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
