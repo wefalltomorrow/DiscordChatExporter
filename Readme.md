@@ -3,7 +3,7 @@
 [![Build](https://img.shields.io/github/actions/workflow/status/wefalltomorrow/DiscordChatExporter/main.yml?branch=prime)](https://github.com/wefalltomorrow/DiscordChatExporter/actions)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](License.txt)
 
-Maintained fork of **DiscordChatExporter** focused on resilient long-running exports, conservative Discord API usage, and improved archive/search tooling.
+Maintained fork of **DiscordChatExporter** focused on resilient long-running exports, explicit Discord API request handling, and improved archive/search tooling.
 
 The fork remains close to upstream while selectively incorporating useful changes from other community forks.
 
@@ -30,9 +30,9 @@ The fork remains close to upstream while selectively incorporating useful change
 - Bound transient retries to avoid uncontrolled retry loops.
 - Optional resilient PowerShell wrapper for long-running exports.
 
-### Conservative Discord API behavior
+### Discord API request handling
 
-User-token exports are intentionally paced more conservatively than upstream:
+For user-token requests, this client applies the scheduling and stop behavior below. These are request-handling controls; they do not make user-token automation permitted or establish account safety:
 
 - One user-token Discord API request in flight at a time.
 - Minimum 750 ms interval between user-token request starts.
@@ -87,13 +87,12 @@ $env:DISCORD_TOKEN = [System.Net.NetworkCredential]::new('', $SecureToken).Passw
     -g 123456789012345678 `
     -f Csv `
     -o 'C:\Discord Export\' `
-    --resume `
-    --parallel 1
+    --resume
 
 Remove-Item Env:DISCORD_TOKEN -ErrorAction SilentlyContinue
 ```
 
-`--parallel 1` is the recommended setting for a conservative single-server archival run. User-token Discord requests are serialized internally, so higher channel-level parallelism does not create simultaneous user-token API requests.
+`--parallel` controls channel-level work and local resource use. User-token Discord API requests are serialized internally and spaced apart regardless of this setting; changing parallelism does not make user-token automation permitted or establish lower account-enforcement risk.
 
 For manifest v2 archives, `--resume` restores the recorded format and continuation-sensitive settings
 for existing channel outputs before verifying or rebuilding them. This prevents a later resume command

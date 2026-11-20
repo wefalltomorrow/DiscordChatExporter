@@ -261,9 +261,10 @@ $env:DISCORD_TOKEN = "your-token"
 .\DiscordChatExporter.Cli.exe exportguild -g 21814 --resume -f Json -o "C:\Discord Exports"
 ```
 
-This fork serializes user-token Discord API traffic internally and spaces request starts conservatively.
-Channel-level parallelism can still overlap local export work, but it does not create simultaneous
-user-token Discord API requests.
+This fork serializes user-token Discord API requests internally and keeps at least 750 ms between
+request starts. These are request-handling controls; they do not make user-token automation permitted or
+establish account safety. Channel-level parallelism can overlap local export work, but it does not
+create simultaneous user-token Discord API requests and is not an account-safety setting.
 
 #### Resuming interrupted multi-channel exports
 
