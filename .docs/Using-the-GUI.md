@@ -8,6 +8,10 @@
 > policy](https://support.discord.com/hc/en-us/articles/115002192352-Automated-User-Accounts-Self-Bots) and [Developer
 > Policy](https://support-dev.discord.com/hc/en-us/articles/8563934450327-Discord-Developer-Policy).
 
+After a confirmed user-token HTTP 429, this fork stops the client and records a local block that also
+applies to future runs using the same token under the same OS user profile. See the [README
+request-handling notes](../Readme.md#discord-api-request-handling) for details and clearing instructions.
+
 ## Video tutorial
 
 [![Video tutorial](https://i.ytimg.com/vi/jjtu0VQXV7I/hqdefault.jpg)](https://youtube.com/watch?v=jjtu0VQXV7I)

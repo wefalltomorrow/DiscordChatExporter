@@ -58,6 +58,12 @@ User-token requests always respect Discord's advisory rate-limit headers. The
 `--respect-rate-limits false` compatibility option only disables advisory handling for bot-token
 requests; HTTP 429 responses are always respected.
 
+A confirmed user-token HTTP 429 stops the current client without retry and records a local block for
+that token. Future runs of this fork using the same token under the same OS user profile are blocked.
+A 429 during the initial user-versus-bot token probe stops only the current client. See the
+[README request-handling notes](../Readme.md#discord-api-request-handling) for the Windows marker path
+and instructions to clear local stops.
+
 To get help with a specific command, run:
 
 ```console
