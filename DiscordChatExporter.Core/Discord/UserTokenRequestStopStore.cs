@@ -43,7 +43,8 @@ internal sealed class UserTokenRequestStopStore(string directoryPath)
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            reason = "The persistent stop state for this user token cannot be read. Further requests are blocked.";
+            reason =
+                "The persistent stop state for this user token cannot be read. Further requests are blocked.";
             return true;
         }
     }

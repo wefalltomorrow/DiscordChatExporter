@@ -284,12 +284,14 @@ public partial class RateLimitSpecs
 
         try
         {
-            using (var client = new DiscordClient(
-                "test-token",
-                RateLimitPreference.IgnoreAll,
-                initialHttp,
-                userTokenRequestStopStore: stopStore
-            ))
+            using (
+                var client = new DiscordClient(
+                    "test-token",
+                    RateLimitPreference.IgnoreAll,
+                    initialHttp,
+                    userTokenRequestStopStore: stopStore
+                )
+            )
             {
                 var initialAct = async () => await client.TryGetChannelAsync(new Snowflake(1));
                 (await initialAct.Should().ThrowAsync<DiscordChatExporterException>())
