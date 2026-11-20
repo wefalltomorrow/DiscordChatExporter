@@ -12,7 +12,7 @@ The fork remains close to upstream while selectively incorporating useful change
 </p>
 
 > [!WARNING]
-> Discord prohibits automating normal user accounts ("self-bots") and warns that accounts found doing so may be terminated. Its Developer Policy also bars scraping data through Discord services. This fork's user-token export mode automates a normal account. Do not use it if avoiding account enforcement is important. Request pacing, TLS/browser-style transport, and rate-limit handling do not make this use permitted or prevent detection. See Discord's [self-bot policy](https://support.discord.com/hc/en-us/articles/115002192352-Automated-User-Accounts-Self-Bots) and [Developer Policy](https://support-dev.discord.com/hc/en-us/articles/8563934450327-Discord-Developer-Policy).
+> Discord prohibits automating normal user accounts ("self-bots") and warns that accounts found doing so may be terminated. Its Developer Policy also bars scraping data through Discord services. This fork's user-token export mode automates a normal account. There is no credible evidence that this fork prevents account suspension or other enforcement, so no such protection is claimed. Request scheduling, rate-limit handling, retries, and transport choices do not make this use permitted or establish account safety. Do not use user-token mode if avoiding account enforcement is important. See Discord's [self-bot policy](https://support.discord.com/hc/en-us/articles/115002192352-Automated-User-Accounts-Self-Bots) and [Developer Policy](https://support-dev.discord.com/hc/en-us/articles/8563934450327-Discord-Developer-Policy).
 
 ## Key improvements
 
