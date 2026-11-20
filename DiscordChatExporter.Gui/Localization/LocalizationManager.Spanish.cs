@@ -15,7 +15,7 @@ public partial class LocalizationManager
             // Token instructions (personal account)
             [nameof(TokenPersonalHeader)] = "Cómo obtener el token para tu cuenta personal:",
             [nameof(TokenPersonalTosWarning)] =
-                "*  Automatizar cuentas de usuario técnicamente va en contra de los ToS — **bajo tu propio riesgo**!",
+                "**Riesgo para la cuenta:** Discord prohíbe automatizar cuentas de usuario normales («self-bots») y advierte que las cuentas detectadas pueden ser canceladas. Su Política para Desarrolladores también prohíbe extraer datos a través de los servicios de Discord. Este modo automatiza una cuenta normal para exportar mensajes. La frecuencia de las solicitudes y el transporte HTTP/TLS no hacen que este uso esté permitido ni garantizan la seguridad de la cuenta. Si necesitas evitar restricciones o la cancelación de tu cuenta, no uses este modo. Lee la [política de Discord sobre self-bots](https://support.discord.com/hc/en-us/articles/115002192352-Automated-User-Accounts-Self-Bots) y la [Política para Desarrolladores](https://support-dev.discord.com/hc/en-us/articles/8563934450327-Discord-Developer-Policy).",
             [nameof(TokenPersonalInstructions)] = """
                 1. Abre Discord en tu navegador web e inicia sesión
                 2. Abre cualquier servidor o canal de mensaje directo
