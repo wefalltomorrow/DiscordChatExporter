@@ -110,6 +110,8 @@ public class DiscordClient(
         BotRequestConcurrencyLimit
     );
     private readonly SemaphoreSlim _userRequestStartGate = new(1, 1);
+    private readonly SemaphoreSlim _tokenResolutionGate = new(1, 1);
+    private string? _requestStopReason;
     private TimeSpan _userRequestStartInterval = UserRequestStartInterval;
     private DateTimeOffset _lastUserRequestStartedUtc;
     private DateTimeOffset _sharedRateLimitUntilUtc;
@@ -122,6 +124,11 @@ public class DiscordClient(
     private TokenKind? _resolvedTokenKind;
 
     public event EventHandler<RateLimitState>? RateLimitChanged;
+
+    // Stable state for callers that must not restart a stopped client automatically.
+    public string? RequestStopReason => Volatile.Read(ref _requestStopReason);
+
+    public RateLimitPreference RateLimitPreference { get; set; } = rateLimitPreference;
 
     internal DiscordClient(
         string tokenOverride,
@@ -195,31 +202,37 @@ public class DiscordClient(
         CancellationToken cancellationToken = default
     )
     {
-        DateTimeOffset observedPauseUntil;
-        TimeSpan delay;
-
-        lock (_rateLimitSync)
+        while (true)
         {
-            observedPauseUntil = _sharedRateLimitUntilUtc;
-            delay = observedPauseUntil - DateTimeOffset.UtcNow;
-        }
+            ThrowIfRequestsStopped();
+            DateTimeOffset observedPauseUntil;
+            TimeSpan delay;
 
-        if (delay <= TimeSpan.Zero)
-            return;
+            lock (_rateLimitSync)
+            {
+                observedPauseUntil = _sharedRateLimitUntilUtc;
+                delay = observedPauseUntil - DateTimeOffset.UtcNow;
+            }
 
-        var completed = false;
-        RateLimitChanged?.Invoke(this, new RateLimitState(true, delay));
-        try
-        {
-            await _delayAsync(delay, cancellationToken);
-            completed = true;
-        }
-        finally
-        {
-            if (completed)
-                ClearSharedRateLimit(observedPauseUntil);
+            if (delay <= TimeSpan.Zero)
+                return;
 
-            RateLimitChanged?.Invoke(this, new RateLimitState(false, TimeSpan.Zero));
+            var completed = false;
+            RateLimitChanged?.Invoke(this, new RateLimitState(true, delay));
+            try
+            {
+                await _delayAsync(delay, cancellationToken);
+                completed = true;
+            }
+            finally
+            {
+                if (completed)
+                    ClearSharedRateLimit(observedPauseUntil);
+
+                RateLimitChanged?.Invoke(this, new RateLimitState(false, TimeSpan.Zero));
+            }
+            // Another in-flight response may have extended the deadline during this wait.
+            // Re-read it before allowing a new request to leave.
         }
     }
 
@@ -246,6 +259,7 @@ public class DiscordClient(
 
             RateLimitChanged?.Invoke(this, new RateLimitState(false, TimeSpan.Zero));
         }
+        await WaitForSharedRateLimitAsync(cancellationToken);
     }
 
     internal static TimeSpan GetAdaptiveHardRateLimitCushion(int recentRateLimitCount) =>
@@ -359,6 +373,7 @@ public class DiscordClient(
                 status != 0 ? status.ToString(CultureInfo.InvariantCulture) : "none"
             )}
             User-token pacing: {UserRequestConcurrencyLimit} request slot, {UserRequestStartInterval.TotalMilliseconds} ms between request starts
+            Request stop reason: {Volatile.Read(ref _requestStopReason) ?? "none"}
             Client totals: {stats.RequestCount} API requests, {stats.HardRateLimitCount} HTTP 429 responses, {stats.AdvisoryPauseCount} advisory pauses, {stats.AvoidedUnavailableRequestCount} unavailable requests avoided
             """;
     }
@@ -397,13 +412,73 @@ public class DiscordClient(
         if (recentInvalidRequestCount < InvalidRequestCircuitBreakerThreshold)
             return;
 
-        response.Dispose();
-        throw new DiscordChatExporterException(
+        throw StopRequests(
             $"Safety circuit breaker stopped Discord requests after {recentInvalidRequestCount} "
                 + $"HTTP 401/403/429 responses within {InvalidRequestCircuitBreakerWindow.TotalMinutes:0} minutes. "
-                + "Check the token, channel permissions, and rate-limit state before resuming.",
-            true
+                + "Check the token, channel permissions, and rate-limit state before resuming."
         );
+    }
+
+    private DiscordChatExporterException StopRequests(string reason)
+    {
+        Interlocked.CompareExchange(ref _requestStopReason, reason, null);
+        return new DiscordChatExporterException(Volatile.Read(ref _requestStopReason)!, true);
+    }
+
+    private void ThrowIfRequestsStopped()
+    {
+        if (Volatile.Read(ref _requestStopReason) is { } reason)
+            throw new DiscordChatExporterException(reason, true);
+    }
+
+    private async ValueTask CheckAccountRestrictionAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken
+    )
+    {
+        if (response.IsSuccessStatusCode)
+            return;
+
+        // The first 401 can be the user-token probe for a bot token. Once resolved,
+        // authentication loss must stop every channel using this client.
+        if (response.StatusCode == HttpStatusCode.Unauthorized && _resolvedTokenKind is not null)
+            throw StopRequests(
+                "Discord rejected authentication. Further requests from this client have been stopped."
+            );
+
+        if (response.StatusCode is not (HttpStatusCode.BadRequest or HttpStatusCode.Forbidden))
+            return;
+
+        try
+        {
+            // Read the buffered text without consuming/closing the stream used by
+            // downstream error handling (including Unknown Emoji detection).
+            using var document = JsonDocument.Parse(
+                await response.Content.ReadAsStringAsync(cancellationToken)
+            );
+            var error = document.RootElement;
+            if (
+                error.ValueKind != JsonValueKind.Object
+                || !error.TryGetProperty("code", out var code)
+                || code.ValueKind != JsonValueKind.Number
+                || !code.TryGetInt32(out var value)
+            )
+                return;
+
+            // https://docs.discord.com/developers/topics/opcodes-and-status-codes
+            if (value == 40002)
+                throw StopRequests(
+                    "Discord requires account verification (code 40002). Further requests from this client have been stopped. Open Discord to review the account notice before starting another export."
+                );
+            if (value == 40333)
+                throw StopRequests(
+                    "Discord reports that Cloudflare blocked the request (code 40333). Further requests from this client have been stopped."
+                );
+        }
+        catch (Exception ex) when (IsJsonParseFailure(ex))
+        {
+            // Keep ordinary HTTP handling for empty, malformed, or non-JSON errors.
+        }
     }
 
     private async ValueTask<HttpResponseMessage> GetResponseAsync(
@@ -412,20 +487,26 @@ public class DiscordClient(
         CancellationToken cancellationToken = default
     )
     {
+        ThrowIfRequestsStopped();
         if (_knownUnavailableRequests.TryGetValue((tokenKind, url), out var cachedStatusCode))
         {
             Interlocked.Increment(ref _avoidedUnavailableRequestCount);
             return CreateCachedUnavailableResponse(url, cachedStatusCode);
         }
 
+        // Keep the slot through response processing and retries. A queued user
+        // request must not overtake a response that is establishing a cooldown.
+        var requestGate = tokenKind == TokenKind.User ? _userRequestGate : _botRequestGate;
+        await requestGate.WaitAsync(cancellationToken);
         var resilienceContext = ResilienceContextPool.Shared.Get(cancellationToken);
         resilienceContext.Properties.Set(Http.RateLimitDelayHandlerKey, WaitForHardRateLimitAsync);
 
         try
         {
-            return await Http.ResponseResiliencePipeline.ExecuteAsync(
+            var result = await Http.ResponseResiliencePipeline.ExecuteAsync(
                 async innerContext =>
                 {
+                    ThrowIfRequestsStopped();
                     await WaitForSharedRateLimitAsync(innerContext.CancellationToken);
 
                     var requestUri = new Uri(_baseUri, url);
@@ -443,50 +524,55 @@ public class DiscordClient(
                         );
                     }
 
-                    var requestGate =
-                        tokenKind == TokenKind.User ? _userRequestGate : _botRequestGate;
-
-                    await requestGate.WaitAsync(innerContext.CancellationToken);
                     HttpResponseMessage response;
+                    ThrowIfRequestsStopped();
+                    if (tokenKind == TokenKind.User)
+                        await WaitForUserRequestStartAsync(innerContext.CancellationToken);
+                    ThrowIfRequestsStopped();
+
+                    Interlocked.Increment(ref _apiRequestCount);
+
+                    if (tokenKind == TokenKind.User && _browserTransport.Session is not null)
+                    {
+                        Volatile.Write(ref _lastRequestTransport, "HttpCloak");
+                        var cloakResponse = await _browserTransport.Session.GetAsync(
+                            requestUri.ToString(),
+                            headers: headers,
+                            cancellationToken: innerContext.CancellationToken
+                        );
+
+                        response = ToHttpResponseMessage(cloakResponse, requestUri);
+                    }
+                    else
+                    {
+                        Volatile.Write(ref _lastRequestTransport, "HttpClient");
+                        using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+                        foreach (var (name, value) in headers)
+                            request.Headers.TryAddWithoutValidation(name, value);
+
+                        response = await _httpClient.SendAsync(
+                            request,
+                            HttpCompletionOption.ResponseHeadersRead,
+                            innerContext.CancellationToken
+                        );
+                    }
+
+                    // Inspect before releasing the user request slot: queued channels
+                    // must observe a stop before they can send another request.
                     try
                     {
-                        if (tokenKind == TokenKind.User)
-                            await WaitForUserRequestStartAsync(innerContext.CancellationToken);
-
-                        Interlocked.Increment(ref _apiRequestCount);
-
-                        if (tokenKind == TokenKind.User && _browserTransport.Session is not null)
-                        {
-                            Volatile.Write(ref _lastRequestTransport, "HttpCloak");
-                            var cloakResponse = await _browserTransport.Session.GetAsync(
-                                requestUri.ToString(),
-                                headers: headers,
-                                cancellationToken: innerContext.CancellationToken
-                            );
-
-                            response = ToHttpResponseMessage(cloakResponse, requestUri);
-                        }
-                        else
-                        {
-                            Volatile.Write(ref _lastRequestTransport, "HttpClient");
-                            using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
-                            foreach (var (name, value) in headers)
-                                request.Headers.TryAddWithoutValidation(name, value);
-
-                            response = await _httpClient.SendAsync(
-                                request,
-                                HttpCompletionOption.ResponseHeadersRead,
-                                innerContext.CancellationToken
-                            );
-                        }
+                        Volatile.Write(ref _lastResponseStatus, (int)response.StatusCode);
+                        await CheckAccountRestrictionAsync(
+                            response,
+                            innerContext.CancellationToken
+                        );
+                        RecordInvalidRequestOrThrow(response);
                     }
-                    finally
+                    catch
                     {
-                        requestGate.Release();
+                        response.Dispose();
+                        throw;
                     }
-
-                    Volatile.Write(ref _lastResponseStatus, (int)response.StatusCode);
-                    RecordInvalidRequestOrThrow(response);
 
                     if (response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.NotFound)
                     {
@@ -497,29 +583,22 @@ public class DiscordClient(
                     // they are typically stricter than the actual server-enforced limits.
                     if (
                         response.StatusCode != HttpStatusCode.TooManyRequests
-                        && rateLimitPreference.IsRespectedFor(tokenKind)
+                        && RateLimitPreference.IsRespectedFor(tokenKind)
                     )
                     {
                         var remainingRequestCount = response
                             .Headers.TryGetValue("X-RateLimit-Remaining")
                             ?.Pipe(v => int.ParseOrNull(v, CultureInfo.InvariantCulture));
 
-                        var resetAfterDelay = response
-                            .Headers.TryGetValue("X-RateLimit-Reset-After")
-                            ?.Pipe(v => double.ParseOrNull(v, CultureInfo.InvariantCulture))
-                            ?.Pipe(TimeSpan.FromSeconds);
-
-                        if (remainingRequestCount <= 0 && resetAfterDelay is not null)
+                        if (remainingRequestCount <= 0)
                         {
-                            Interlocked.Increment(ref _advisoryPauseCount);
-
-                            var delay = (resetAfterDelay.Value + TimeSpan.FromSeconds(1)).Clamp(
-                                TimeSpan.Zero,
-                                TimeSpan.FromSeconds(60)
-                            );
-
                             try
                             {
+                                var delay =
+                                    Http.ParseRateLimitDelay(
+                                        response.Headers.TryGetValue("X-RateLimit-Reset-After")
+                                    ) + TimeSpan.FromSeconds(1);
+                                Interlocked.Increment(ref _advisoryPauseCount);
                                 await response.Content.LoadIntoBufferAsync(
                                     innerContext.CancellationToken
                                 );
@@ -537,15 +616,52 @@ public class DiscordClient(
                 },
                 resilienceContext
             );
+
+            // Polly does not invoke OnRetry for the terminal response. Do not let
+            // another channel start a fresh retry budget after persistent 429s.
+            if (result.StatusCode == HttpStatusCode.TooManyRequests)
+            {
+                result.Dispose();
+                RecordHardRateLimit();
+                throw StopRequests(
+                    "Discord rate-limit retries were exhausted. Further requests from this client have been stopped."
+                );
+            }
+
+            return result;
+        }
+        catch (InvalidRateLimitException)
+        {
+            throw StopRequests(
+                "Discord returned an unusable rate-limit duration. Further requests from this client have been stopped."
+            );
         }
         finally
         {
             ResilienceContextPool.Shared.Return(resilienceContext);
+            requestGate.Release();
         }
     }
 
     private async ValueTask<TokenKind> ResolveTokenKindAsync(
         CancellationToken cancellationToken = default
+    )
+    {
+        ThrowIfRequestsStopped();
+        await _tokenResolutionGate.WaitAsync(cancellationToken);
+        try
+        {
+            ThrowIfRequestsStopped();
+            return await ResolveTokenKindCoreAsync(cancellationToken);
+        }
+        finally
+        {
+            _tokenResolutionGate.Release();
+        }
+    }
+
+    private async ValueTask<TokenKind> ResolveTokenKindCoreAsync(
+        CancellationToken cancellationToken
     )
     {
         if (_resolvedTokenKind is not null)
@@ -581,7 +697,9 @@ public class DiscordClient(
                 $"Token probe failed: {botResponse.StatusCode.ToString().SeparateWords(' ').ToLowerInvariant()}."
             );
 
-        throw new DiscordChatExporterException("Authentication token is invalid.", true);
+        throw StopRequests(
+            "Authentication token is invalid. Further requests from this client have been stopped."
+        );
     }
 
     private async ValueTask<HttpResponseMessage> GetResponseAsync(
@@ -822,6 +940,10 @@ public class DiscordClient(
             return TryParseMessageSearchTotal(statusCode, response);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (DiscordChatExporterException ex) when (ex.IsFatal)
         {
             throw;
         }
@@ -1643,5 +1765,6 @@ public class DiscordClient(
         _userRequestGate.Dispose();
         _botRequestGate.Dispose();
         _userRequestStartGate.Dispose();
+        _tokenResolutionGate.Dispose();
     }
 }

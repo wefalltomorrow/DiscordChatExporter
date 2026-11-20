@@ -48,6 +48,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$PSNativeCommandUseErrorActionPreference = $false
 
 
 # ============================================================================
@@ -131,6 +132,20 @@ function Test-AuthenticationFailure {
     return (
         $Text -match '(?i)authentication token is invalid' -or
         $Text -match '(?i)\bunauthorized\b'
+    )
+}
+
+function Test-RequestStop {
+    param([int]$ExitCode, [string]$Text)
+
+    # Exit code 3 is the CLI contract. Text also covers older builds and partial failures.
+    return (
+        $ExitCode -eq 3 -or
+        $Text -match '(?i)further requests from this client have been stopped' -or
+        $Text -match '(?i)circuit breaker stopped Discord requests' -or
+        $Text -match '(?i)account verification.*40002' -or
+        $Text -match '(?i)Cloudflare.*40333' -or
+        $Text -match '(?i)too many requests'
     )
 }
 
@@ -219,7 +234,7 @@ while ($true) {
 
     Write-Log "Starting export pass $Pass."
 
-    $ErrorFile = Join-Path $env:TEMP "DCE_Resilient_$([Guid]::NewGuid().ToString('N')).stderr.txt"
+    $ErrorFile = Join-Path ([IO.Path]::GetTempPath()) "DCE_Resilient_$([Guid]::NewGuid().ToString('N')).stderr.txt"
 
     try {
         # Keep the token out of the child process command line. The CLI natively
@@ -252,6 +267,11 @@ while ($true) {
             Write-Host ''
             Write-Host $ErrorText.TrimEnd()
             Add-Content -LiteralPath $LogFile -Value $ErrorText.TrimEnd() -Encoding UTF8
+        }
+
+        if (Test-RequestStop -ExitCode $ExitCode -Text $ErrorText) {
+            Write-Log 'Discord requests stopped. Automatic restart is disabled for this failure.'
+            throw 'Discord requests stopped. Review the reported reason before starting another export.'
         }
 
         if (Test-AuthenticationFailure -Text $ErrorText) {

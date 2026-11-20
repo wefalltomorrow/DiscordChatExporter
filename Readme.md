@@ -24,6 +24,7 @@ The fork remains close to upstream while selectively incorporating useful change
 - Resume restores recorded settings before verifying or rebuilding existing channel archives.
 - Skip channels that were already completed on a previous run.
 - Incrementally update completed exports with messages posted since the last export.
+- Combine `--incremental --resume` to repair incomplete archives and fetch newer messages in one pass.
 - Isolate per-channel failures so one recoverable error does not stop the full server export.
 - Retry malformed or truncated Discord JSON at the request level instead of restarting an entire channel.
 - Bound transient retries to avoid uncontrolled retry loops.
@@ -38,10 +39,16 @@ User-token exports are intentionally paced more conservatively than upstream:
 - Advisory rate-limit headers are always respected for user tokens.
 - HTTP 429 handling prefers Discord's `retry_after` value and applies progressively larger local cooldowns when rate limits repeat.
 - Rate-limit pauses are coordinated across the client.
+- Refreshing the GUI with the same token preserves request stops, cooldowns, and cached request history. Rate-limit preference changes apply without resetting the client. Switching credentials or restarting the application starts a new session; stops are not persisted across sessions.
 - Exact 403/404 requests are cached for the remainder of the run to avoid repeated unavailable lookups.
 - Guild channels, roles, members, and channel/thread metadata are cached across the export.
 - Concurrent duplicate metadata lookups are collapsed into a single request.
-- A local circuit breaker stops the run after an abnormal burst of HTTP 401/403/429 responses.
+- A local circuit breaker stops further requests from the client after an abnormal burst of HTTP 401/403/429 responses.
+- User-token requests retain their request slot through retries and cooldowns so queued requests cannot bypass a newly received limit. Server-requested advisory waits are honored in full, including waits longer than 60 seconds.
+- Exhausting HTTP 429 retries stops subsequent requests from that client. Retry delays also support HTTP-date headers and non-object JSON error bodies.
+- The CLI exits with code **3** when requests have been stopped. Automation must not restart it automatically after this code. The resilient PowerShell wrapper respects this exit code and recognizes restriction/rate-limit errors from older builds, while retaining retries for ordinary connection failures.
+- An explicitly unusable rate-limit duration stops the client instead of falling back to a short retry. This includes negative/nonfinite values, missing reset timing when an advisory bucket is exhausted, and waits beyond the supported timer range. Existing waiters honor cooldown extensions from other in-flight requests.
+- Account verification required (40002), Cloudflare blocking (40333), or lost authentication also stop further requests from the client, including queued channel requests. Review the account or access issue before starting another export. Ordinary missing channel permissions remain scoped to that channel. These stops respond to errors; they do not guarantee prevention of account detection or restrictions.
 - Export summaries report API request counts, 429s, advisory pauses, avoided unavailable requests, and metadata cache hits.
 
 ### Archive and search tools
@@ -105,6 +112,21 @@ with `--incremental` instead of `--resume`:
 
 Incremental mode restores the original continuation-sensitive settings from `manifest.json` and
 appends only newer messages. See [Using the CLI](.docs/Using-the-CLI.md) for details.
+
+To repair interrupted channel archives while also fetching messages posted since the last export, use
+both flags together. Incomplete archives continue from the last message actually stored; completed
+archives receive newer messages, and previously unexported channels are exported normally:
+
+```powershell
+& ".\DiscordChatExporter.Cli.exe" `
+    exportguild `
+    -g 123456789012345678 `
+    -f Csv `
+    -o "C:\Discord Export\" `
+    --incremental `
+    --resume `
+    --parallel 1
+```
 
 New exports record media directories inside the export folder as relative paths. Move the archive,
 its media folder, and `manifest.json` together to keep resume and incremental exports portable.

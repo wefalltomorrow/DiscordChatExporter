@@ -14,7 +14,7 @@ using Xunit;
 
 namespace DiscordChatExporter.Cli.Tests.Specs;
 
-public class RateLimitSpecs
+public partial class RateLimitSpecs
 {
     [Fact]
     public void Archival_request_concurrency_is_conservatively_bounded()
@@ -452,6 +452,16 @@ public class RateLimitSpecs
         await act.Should()
             .ThrowAsync<DiscordChatExporterException>()
             .WithMessage("*circuit breaker*");
+        // Once tripped, even another channel must fail before a network request.
+        var later = async () => await discord.TryGetChannelAsync(new Snowflake(1000));
+        await later
+            .Should()
+            .ThrowAsync<DiscordChatExporterException>()
+            .WithMessage("*circuit breaker*");
+        discord
+            .GetRequestStats()
+            .RequestCount.Should()
+            .Be(1 + DiscordClient.InvalidRequestCircuitBreakerThreshold);
     }
 
     [Theory]

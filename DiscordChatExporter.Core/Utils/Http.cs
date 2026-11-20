@@ -8,6 +8,7 @@ using System.Security.Authentication;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using DiscordChatExporter.Core.Exceptions;
 using HttpCloak;
 using Polly;
 using Polly.Retry;
@@ -17,6 +18,25 @@ namespace DiscordChatExporter.Core.Utils;
 
 public static class Http
 {
+    // Leave room for the one-second margin and the largest adaptive cushion.
+    // Longer waits cannot be passed to Task.Delay; stop instead of retrying early.
+    internal static TimeSpan ParseRateLimitDelay(string? seconds)
+    {
+        if (
+            !double.TryParse(
+                seconds,
+                NumberStyles.Float,
+                CultureInfo.InvariantCulture,
+                out var value
+            )
+            || !double.IsFinite(value)
+            || value < 0
+            || value > (uint.MaxValue - 1) / 1000d - 61
+        )
+            throw new InvalidRateLimitException();
+        return TimeSpan.FromSeconds(value);
+    }
+
     public static HttpClient Client { get; } = new();
 
     internal static ResiliencePropertyKey<
@@ -64,37 +84,20 @@ public static class Http
                 return null;
 
             using var json = JsonDocument.Parse(payload);
-            if (!json.RootElement.TryGetProperty("retry_after", out var retryAfterElement))
-                return null;
-
-            double retryAfterSeconds;
             if (
-                retryAfterElement.ValueKind == JsonValueKind.Number
-                && retryAfterElement.TryGetDouble(out retryAfterSeconds)
+                json.RootElement.ValueKind != JsonValueKind.Object
+                || !json.RootElement.TryGetProperty("retry_after", out var retryAfterElement)
             )
-            {
-                // Parsed below.
-            }
-            else if (
-                retryAfterElement.ValueKind == JsonValueKind.String
-                && double.TryParse(
-                    retryAfterElement.GetString(),
-                    NumberStyles.Float,
-                    CultureInfo.InvariantCulture,
-                    out retryAfterSeconds
-                )
-            )
-            {
-                // Parsed below.
-            }
-            else
-            {
                 return null;
-            }
 
-            return retryAfterSeconds >= 0 && double.IsFinite(retryAfterSeconds)
-                ? TimeSpan.FromSeconds(retryAfterSeconds)
-                : null;
+            return ParseRateLimitDelay(
+                retryAfterElement.ValueKind switch
+                {
+                    JsonValueKind.Number => retryAfterElement.GetRawText(),
+                    JsonValueKind.String => retryAfterElement.GetString(),
+                    _ => null,
+                }
+            );
         }
         catch (JsonException)
         {
@@ -127,14 +130,19 @@ public static class Http
             }
 
             if (response.Headers.RetryAfter?.Delta is { } headerRetryAfter)
-                return headerRetryAfter + TimeSpan.FromSeconds(1);
+                return ParseRateLimitDelay(
+                        headerRetryAfter.TotalSeconds.ToString(CultureInfo.InvariantCulture)
+                    ) + TimeSpan.FromSeconds(1);
 
-            var resetAfterSeconds = response
-                .Headers.TryGetValue("X-RateLimit-Reset-After")
-                ?.Pipe(v => double.ParseOrNull(v, CultureInfo.InvariantCulture));
+            if (response.Headers.RetryAfter?.Date is { } retryAt)
+                return (retryAt - DateTimeOffset.UtcNow).Clamp(TimeSpan.Zero, TimeSpan.MaxValue)
+                    + TimeSpan.FromSeconds(1);
 
-            if (resetAfterSeconds is >= 0)
-                return TimeSpan.FromSeconds(resetAfterSeconds.Value) + TimeSpan.FromSeconds(1);
+            if (response.Headers.Contains("Retry-After"))
+                throw new InvalidRateLimitException();
+
+            if (response.Headers.TryGetValue("X-RateLimit-Reset-After") is { } resetAfter)
+                return ParseRateLimitDelay(resetAfter) + TimeSpan.FromSeconds(1);
         }
 
         return TimeSpan.FromSeconds(Math.Pow(2, args.AttemptNumber) + 1);
@@ -165,7 +173,20 @@ public static class Http
                     MaxRetryAttempts = 8,
                     DelayGenerator = async args =>
                     {
-                        var delay = await GetResponseRetryDelayAsync(args);
+                        TimeSpan delay;
+                        try
+                        {
+                            delay = await GetResponseRetryDelayAsync(args);
+                            if (IsRateLimitResponse(args.Outcome.Result))
+                                ParseRateLimitDelay(
+                                    delay.TotalSeconds.ToString(CultureInfo.InvariantCulture)
+                                );
+                        }
+                        catch (InvalidRateLimitException)
+                        {
+                            args.Outcome.Result?.Dispose();
+                            throw;
+                        }
 
                         if (
                             IsRateLimitResponse(args.Outcome.Result)

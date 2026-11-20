@@ -1,5 +1,7 @@
+using System;
 using System.Linq;
 using System.Reflection;
+using System.Threading;
 using Avalonia.Headless.XUnit;
 using DiscordChatExporter.Core.Discord;
 using DiscordChatExporter.Core.Discord.Data;
@@ -19,6 +21,82 @@ namespace DiscordChatExporter.Gui.Tests;
 // FAB floats into the Export FAB's slot whenever the user is merely logged in (no channel chosen).
 public sealed class DashboardCommandGatingTests
 {
+    private static DiscordClient GetClient(DashboardViewModel vm, string token) =>
+        (DiscordClient)
+            typeof(DashboardViewModel)
+                .GetMethod(
+                    "GetOrCreateDiscordClient",
+                    BindingFlags.Instance | BindingFlags.NonPublic
+                )!
+                .Invoke(vm, [token])!;
+
+    [AvaloniaFact]
+    public void Refresh_preserves_request_stop_cooldown_and_request_history()
+    {
+        using var vm = CreateViewModel();
+        var original = GetClient(vm, "fake-token");
+        var deadline = DateTimeOffset.UtcNow.AddHours(1);
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+        typeof(DiscordClient)
+            .GetMethod("StopRequests", flags)!
+            .Invoke(original, ["Offline simulated restriction"]);
+        typeof(DiscordClient)
+            .GetField("_sharedRateLimitUntilUtc", flags)!
+            .SetValue(original, deadline);
+        typeof(DiscordClient).GetField("_apiRequestCount", flags)!.SetValue(original, 10L);
+
+        var refreshed = GetClient(vm, "fake-token");
+
+        refreshed.Should().BeSameAs(original);
+        refreshed.RequestStopReason.Should().Be("Offline simulated restriction");
+        typeof(DiscordClient)
+            .GetField("_sharedRateLimitUntilUtc", flags)!
+            .GetValue(refreshed)
+            .Should()
+            .Be(deadline);
+        typeof(DiscordClient)
+            .GetField("_apiRequestCount", flags)!
+            .GetValue(refreshed)
+            .Should()
+            .Be(10L);
+    }
+
+    [AvaloniaFact]
+    public void Refresh_applies_preferences_without_resetting_the_client()
+    {
+        using var vm = CreateViewModel();
+        var original = GetClient(vm, "fake-token");
+        var settings = (SettingsService)
+            typeof(DashboardViewModel)
+                .GetField("_settingsService", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(vm)!;
+        settings.RateLimitPreference = RateLimitPreference.IgnoreAll;
+
+        var refreshed = GetClient(vm, "fake-token");
+
+        refreshed.Should().BeSameAs(original);
+        refreshed.RateLimitPreference.Should().Be(RateLimitPreference.IgnoreAll);
+    }
+
+    [AvaloniaFact]
+    public void Changing_credentials_replaces_and_disposes_the_previous_client()
+    {
+        using var vm = CreateViewModel();
+        var original = GetClient(vm, "fake-token");
+        var gate = (SemaphoreSlim)
+            typeof(DiscordClient)
+                .GetField("_tokenResolutionGate", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(original)!;
+
+        var replacement = GetClient(vm, "different-fake-token");
+
+        replacement.Should().NotBeSameAs(original);
+        replacement.RequestStopReason.Should().BeNull();
+        Action useDisposedGate = () => gate.Wait(0);
+        useDisposedGate.Should().Throw<ObjectDisposedException>();
+        GetClient(vm, "different-fake-token").Should().BeSameAs(replacement);
+    }
+
     private static DashboardViewModel CreateViewModel()
     {
         var services = new ServiceCollection();
