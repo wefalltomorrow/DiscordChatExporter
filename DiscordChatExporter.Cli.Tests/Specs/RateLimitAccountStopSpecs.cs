@@ -319,7 +319,8 @@ public partial class RateLimitSpecs
                 userTokenRequestStopStore: new UserTokenRequestStopStore(stopDirectory)
             );
 
-            var restartedAct = async () => await restartedClient.TryGetChannelAsync(new Snowflake(1));
+            var restartedAct = async () =>
+                await restartedClient.TryGetChannelAsync(new Snowflake(1));
             (await restartedAct.Should().ThrowAsync<DiscordChatExporterException>())
                 .Which.Message.Should()
                 .Contain("previous HTTP 429");
@@ -369,19 +370,20 @@ public partial class RateLimitSpecs
         var stopStore = new UserTokenRequestStopStore(stopDirectory);
         using var probeHttp = new HttpClient(
             new CallbackHandler(
-                (_, _) =>
-                    Task.FromResult(new HttpResponseMessage(HttpStatusCode.TooManyRequests))
+                (_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.TooManyRequests))
             )
         );
 
         try
         {
-            using (var probeClient = new DiscordClient(
-                "test-token",
-                RateLimitPreference.IgnoreAll,
-                probeHttp,
-                userTokenRequestStopStore: stopStore
-            ))
+            using (
+                var probeClient = new DiscordClient(
+                    "test-token",
+                    RateLimitPreference.IgnoreAll,
+                    probeHttp,
+                    userTokenRequestStopStore: stopStore
+                )
+            )
             {
                 var probeAct = async () => await probeClient.TryGetChannelAsync(new Snowflake(1));
                 (await probeAct.Should().ThrowAsync<DiscordChatExporterException>())
@@ -399,8 +401,8 @@ public partial class RateLimitSpecs
                         Interlocked.Increment(ref fallbackRequests);
                         if (request.RequestUri!.AbsolutePath.EndsWith("/users/@me"))
                         {
-                            var isBot = request.Headers
-                                .GetValues("Authorization")
+                            var isBot = request
+                                .Headers.GetValues("Authorization")
                                 .Single()
                                 .StartsWith("Bot ", StringComparison.Ordinal);
                             return Task.FromResult(
@@ -422,7 +424,9 @@ public partial class RateLimitSpecs
             );
 
             (await fallbackClient.TryGetChannelAsync(new Snowflake(1))).Should().BeNull();
-            fallbackRequests.Should().Be(3, "the fresh client should probe user, probe bot, then fetch the channel");
+            fallbackRequests
+                .Should()
+                .Be(3, "the fresh client should probe user, probe bot, then fetch the channel");
         }
         finally
         {

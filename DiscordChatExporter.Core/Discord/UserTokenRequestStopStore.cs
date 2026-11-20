@@ -55,7 +55,12 @@ internal sealed class UserTokenRequestStopStore(string directoryPath)
         {
             Directory.CreateDirectory(_directoryPath);
             var path = GetMarkerPath(token);
-            using var marker = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
+            using var marker = new FileStream(
+                path,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.Read
+            );
             marker.Flush(flushToDisk: true);
         }
         catch (IOException) when (File.Exists(GetMarkerPath(token)))
