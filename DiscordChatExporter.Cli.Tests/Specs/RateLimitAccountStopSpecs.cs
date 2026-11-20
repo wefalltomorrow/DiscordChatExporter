@@ -237,7 +237,9 @@ public partial class RateLimitSpecs
         }
 
         rateLimited.IsDisposed.Should().BeTrue();
-        requests.Should().Be(2, "a user-token 429 must not be retried or followed by queued requests");
+        requests
+            .Should()
+            .Be(2, "a user-token 429 must not be retried or followed by queued requests");
         delays.Should().Be(0);
         client.GetRequestStats().RequestCount.Should().Be(2);
         client.GetRequestStats().HardRateLimitCount.Should().Be(1);
