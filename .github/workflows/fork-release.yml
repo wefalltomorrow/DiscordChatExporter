@@ -162,6 +162,7 @@ jobs:
 
           Included in this release:
           - resumable and checkpointed whole-server exports
+          - combined `--incremental --resume` continuation to repair interrupted archives and fetch newer messages in one pass
           - manifest-backed setting restoration for CLI resume and incremental updates
           - consistent GUI/CLI continuation behavior, including media/filter/markdown settings
           - conservative user-token request pacing and coordinated rate-limit handling
@@ -169,8 +170,11 @@ jobs:
           - request-level recovery for malformed or truncated Discord JSON
           - SQLite export, full-text search, library support, and offline conversion
           - bounded retries and permanent-failure handling
+          - stop behavior after terminal account/authentication errors and exhausted or unusable rate limits, with CLI exit code 3
           - Windows user-token browser/TLS transport
           - self-contained CLI and GUI builds for Windows, Linux, and macOS
+
+          Request safeguards respond to errors; they do not guarantee prevention of Discord detection or account restrictions.
 
           See the README for recommended CLI usage and the full list of changes.
 

@@ -24,6 +24,7 @@ The fork remains close to upstream while selectively incorporating useful change
 - Resume restores recorded settings before verifying or rebuilding existing channel archives.
 - Skip channels that were already completed on a previous run.
 - Incrementally update completed exports with messages posted since the last export.
+- Combine `--incremental --resume` to repair incomplete archives and fetch newer messages in one pass.
 - Isolate per-channel failures so one recoverable error does not stop the full server export.
 - Retry malformed or truncated Discord JSON at the request level instead of restarting an entire channel.
 - Bound transient retries to avoid uncontrolled retry loops.
@@ -111,6 +112,21 @@ with `--incremental` instead of `--resume`:
 
 Incremental mode restores the original continuation-sensitive settings from `manifest.json` and
 appends only newer messages. See [Using the CLI](.docs/Using-the-CLI.md) for details.
+
+To repair interrupted channel archives while also fetching messages posted since the last export, use
+both flags together. Incomplete archives continue from the last message actually stored; completed
+archives receive newer messages, and previously unexported channels are exported normally:
+
+```powershell
+& ".\DiscordChatExporter.Cli.exe" `
+    exportguild `
+    -g 123456789012345678 `
+    -f Csv `
+    -o "C:\Discord Export\" `
+    --incremental `
+    --resume `
+    --parallel 1
+```
 
 New exports record media directories inside the export folder as relative paths. Move the archive,
 its media folder, and `manifest.json` together to keep resume and incremental exports portable.
