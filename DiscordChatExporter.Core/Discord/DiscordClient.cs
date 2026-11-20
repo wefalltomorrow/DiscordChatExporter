@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -92,6 +93,8 @@ public class DiscordClient(
         cancellationToken
     ) => new ValueTask(Task.Delay(delay, cancellationToken));
     private readonly bool _refreshUserClientBuildNumber = true;
+    private readonly UserTokenRequestStopStore _userTokenRequestStopStore =
+        UserTokenRequestStopStore.CreateDefault();
     private readonly object _rateLimitSync = new();
     private readonly object _invalidRequestSync = new();
     private readonly object _hardRateLimitSync = new();
@@ -134,10 +137,14 @@ public class DiscordClient(
         string tokenOverride,
         RateLimitPreference rateLimitPreferenceOverride,
         HttpClient httpClient,
-        Func<TimeSpan, CancellationToken, ValueTask>? delayAsync = null
+        Func<TimeSpan, CancellationToken, ValueTask>? delayAsync = null,
+        UserTokenRequestStopStore? userTokenRequestStopStore = null
     )
         : this(tokenOverride, rateLimitPreferenceOverride)
     {
+        if (userTokenRequestStopStore is not null)
+            _userTokenRequestStopStore = userTokenRequestStopStore;
+
         _httpClient = httpClient;
         _browserTransport.Session?.Dispose();
         _browserTransport = (null, "A managed HTTP client was supplied.");
@@ -431,6 +438,40 @@ public class DiscordClient(
             throw new DiscordChatExporterException(reason, true);
     }
 
+    private void ThrowIfPersistentUserTokenStop(TokenKind tokenKind)
+    {
+        if (
+            tokenKind == TokenKind.User
+            && _userTokenRequestStopStore.TryGetStopReason(token, out var reason)
+        )
+            throw StopRequests(reason!);
+    }
+
+    private DiscordChatExporterException StopAfterUserTokenRateLimit()
+    {
+        if (_resolvedTokenKind != TokenKind.User)
+        {
+            return StopRequests(
+                "Discord returned HTTP 429 while this client was checking a token as a user token. The client is stopped, but token type was not confirmed so no persistent user-token stop was recorded. Do not restart automatically."
+            );
+        }
+
+        try
+        {
+            _userTokenRequestStopStore.MarkStopped(token);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return StopRequests(
+                "Discord returned HTTP 429 for a user-token request. Further requests from this client have been stopped, but the local stop could not be saved across restarts. Do not restart or resume this run."
+            );
+        }
+
+        return StopRequests(
+            "Discord returned HTTP 429 for a user-token request. Further requests from this client and future runs of this fork using this token under the same OS user profile have been stopped."
+        );
+    }
+
     private async ValueTask CheckAccountRestrictionAsync(
         HttpResponseMessage response,
         CancellationToken cancellationToken
@@ -488,6 +529,7 @@ public class DiscordClient(
     )
     {
         ThrowIfRequestsStopped();
+        ThrowIfPersistentUserTokenStop(tokenKind);
         if (_knownUnavailableRequests.TryGetValue((tokenKind, url), out var cachedStatusCode))
         {
             Interlocked.Increment(ref _avoidedUnavailableRequestCount);
@@ -507,6 +549,7 @@ public class DiscordClient(
                 async innerContext =>
                 {
                     ThrowIfRequestsStopped();
+                    ThrowIfPersistentUserTokenStop(tokenKind);
                     await WaitForSharedRateLimitAsync(innerContext.CancellationToken);
 
                     var requestUri = new Uri(_baseUri, url);
@@ -529,6 +572,7 @@ public class DiscordClient(
                     if (tokenKind == TokenKind.User)
                         await WaitForUserRequestStartAsync(innerContext.CancellationToken);
                     ThrowIfRequestsStopped();
+                    ThrowIfPersistentUserTokenStop(tokenKind);
 
                     Interlocked.Increment(ref _apiRequestCount);
 
@@ -566,7 +610,6 @@ public class DiscordClient(
                             response,
                             innerContext.CancellationToken
                         );
-                        RecordInvalidRequestOrThrow(response);
 
                         if (
                             tokenKind == TokenKind.User
@@ -574,10 +617,10 @@ public class DiscordClient(
                         )
                         {
                             RecordHardRateLimit();
-                            throw StopRequests(
-                                "Discord returned HTTP 429 for a user-token request. Further requests from this client have been stopped."
-                            );
+                            throw StopAfterUserTokenRateLimit();
                         }
+
+                        RecordInvalidRequestOrThrow(response);
                     }
                     catch
                     {

@@ -12,7 +12,7 @@ The fork remains close to upstream while selectively incorporating useful change
 </p>
 
 > [!WARNING]
-> Discord prohibits automating normal user accounts ("self-bots") and warns that accounts found doing so may be terminated. Its Developer Policy also bars scraping data through Discord services. This fork's user-token export mode automates a normal account. Do not use it if avoiding account enforcement is important. Request pacing, TLS/browser-style transport, and rate-limit handling do not make this use permitted or prevent detection. See Discord's [self-bot policy](https://support.discord.com/hc/en-us/articles/115002192352-Automated-User-Accounts-Self-Bots) and [Developer Policy](https://support-dev.discord.com/hc/en-us/articles/8563934450327-Discord-Developer-Policy).
+> Discord prohibits automating normal user accounts ("self-bots") and warns that accounts found doing so may be terminated. Its Developer Policy also bars scraping data through Discord services. This fork's user-token export mode automates a normal account. There is no credible evidence that this fork prevents account suspension or other enforcement, so no such protection is claimed. Request scheduling, rate-limit handling, retries, and transport choices do not make this use permitted or establish account safety. Do not use user-token mode if avoiding account enforcement is important. See Discord's [self-bot policy](https://support.discord.com/hc/en-us/articles/115002192352-Automated-User-Accounts-Self-Bots) and [Developer Policy](https://support-dev.discord.com/hc/en-us/articles/8563934450327-Discord-Developer-Policy).
 
 ## Key improvements
 
@@ -37,11 +37,12 @@ For user-token requests, this client applies the scheduling and stop behavior be
 - One user-token Discord API request in flight at a time.
 - Minimum 750 ms interval between user-token request starts.
 - Advisory rate-limit headers are always respected for user tokens.
-- The first HTTP 429 from a user-token request immediately stops this client; it is not retried, and queued requests are rejected. Bot-token 429 responses use the retry and cooldown policy.
-- Do not automatically restart or resume a stopped user-token run after HTTP 429; the stop is session-local and does not persist across application restarts.
+- The first HTTP 429 from a confirmed user-token request immediately stops this client; it is not retried, and queued requests are rejected. A local marker keyed by a one-way fingerprint of that token blocks future runs of this fork using the same token under the same OS user profile. Bot-token 429 responses use the retry and cooldown policy.
+- The marker is stored in that OS user's application-data directory. It is local stop state, not an account-wide enforcement signal, and does not establish account safety. If a 429 occurs while the client is still determining whether a token is a user or bot token, only the current client is stopped because the token type is not confirmed.
+- On Windows, the marker directory is %LOCALAPPDATA%\DiscordChatExporter\UserTokenRequestStops. To manually clear all locally stored 429 stops, close every running instance and remove that directory; this allows those tokens to be used again.
 - Bot-token HTTP 429 handling prefers Discord's `retry_after` value and applies progressively larger local cooldowns when rate limits repeat.
 - Rate-limit pauses are coordinated across the client.
-- Refreshing the GUI with the same token preserves request stops, cooldowns, and cached request history. Rate-limit preference changes apply without resetting the client. Switching credentials or restarting the application starts a new session; stops are not persisted across sessions.
+- Refreshing the GUI with the same token preserves request stops, cooldowns, and cached request history. Rate-limit preference changes apply without resetting the client. Switching credentials starts a new client; a 429 stop for the same token remains in local application data across restarts.
 - Exact 403/404 requests are cached for the remainder of the run to avoid repeated unavailable lookups.
 - Guild channels, roles, members, and channel/thread metadata are cached across the export.
 - Concurrent duplicate metadata lookups are collapsed into a single request.
