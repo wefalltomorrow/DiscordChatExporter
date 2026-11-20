@@ -12,4 +12,6 @@ Before publishing:
 
 Local Windows checks are useful evidence but do not replace native Linux/macOS validation. Offline success does not establish prevention of Discord detection or suspension. Do not label a candidate as safe or undetectable based on these tests.
 
+Discord prohibits automating normal user accounts (self-bots), warns that accounts found doing so may be terminated, and bars scraping in its Developer Policy. A first-429 stop is only a fail-closed response to a rate-limit signal; it does not make user-token automation permitted or establish that an account is safe. Do not describe this project or any release as minimizing, preventing, or eliminating suspension risk while user-token automation remains available.
+
 If GitHub rejects workflow dispatch with `Actions has been disabled for this repository`, preserve the response and keep the candidate unmerged and unreleased until execution is restored. An API response showing repository Actions permissions enabled does not establish that jobs can run.

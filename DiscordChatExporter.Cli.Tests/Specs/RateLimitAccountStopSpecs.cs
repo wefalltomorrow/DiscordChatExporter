@@ -189,6 +189,63 @@ public partial class RateLimitSpecs
     }
 
     [Fact]
+    public async Task User_rate_limit_stops_queued_requests_without_retry()
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var requests = 0;
+        var delays = 0;
+        var rateLimited = new TrackingHttpResponseMessage(HttpStatusCode.TooManyRequests);
+        using var http = new HttpClient(
+            new CallbackHandler(
+                async (request, ct) =>
+                {
+                    Interlocked.Increment(ref requests);
+                    if (request.RequestUri!.AbsolutePath.EndsWith("/users/@me"))
+                        return new HttpResponseMessage(HttpStatusCode.OK);
+                    entered.TrySetResult();
+                    await release.Task.WaitAsync(ct);
+                    return rateLimited;
+                }
+            )
+        );
+        using var client = new DiscordClient(
+            "test-token",
+            RateLimitPreference.IgnoreAll,
+            http,
+            (_, _) =>
+            {
+                Interlocked.Increment(ref delays);
+                return ValueTask.CompletedTask;
+            }
+        );
+
+        var first = client.TryGetChannelAsync(new Snowflake(1)).AsTask();
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var pending = Enumerable
+            .Range(2, 8)
+            .Select(id => client.TryGetChannelAsync(new Snowflake((ulong)id)).AsTask())
+            .ToArray();
+        release.TrySetResult();
+
+        foreach (var task in pending.Append(first))
+        {
+            var act = async () => await task.WaitAsync(TimeSpan.FromSeconds(5));
+            var failure = await act.Should().ThrowAsync<DiscordChatExporterException>();
+            failure.Which.IsFatal.Should().BeTrue();
+            failure.Which.Message.Should().Contain("429");
+        }
+
+        rateLimited.IsDisposed.Should().BeTrue();
+        requests
+            .Should()
+            .Be(2, "a user-token 429 must not be retried or followed by queued requests");
+        delays.Should().Be(0);
+        client.GetRequestStats().RequestCount.Should().Be(2);
+        client.GetRequestStats().HardRateLimitCount.Should().Be(1);
+    }
+
+    [Fact]
     public async Task Verification_required_during_probe_stops_without_bot_fallback()
     {
         using var http = new HttpClient(

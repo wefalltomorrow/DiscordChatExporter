@@ -58,6 +58,7 @@ public partial class RateLimitSpecs
         var observedDelays = new List<TimeSpan>();
         using var httpClient = new HttpClient(
             new QueueHttpMessageHandler([
+                new HttpResponseMessage(HttpStatusCode.Unauthorized),
                 new HttpResponseMessage(HttpStatusCode.OK),
                 new HttpResponseMessage(HttpStatusCode.TooManyRequests)
                 {
@@ -108,6 +109,7 @@ public partial class RateLimitSpecs
     {
         using var httpClient = new HttpClient(
             new QueueHttpMessageHandler([
+                new HttpResponseMessage(HttpStatusCode.Unauthorized),
                 new HttpResponseMessage(HttpStatusCode.OK),
                 CreateRateLimitResponse(TimeSpan.Zero),
                 new HttpResponseMessage(HttpStatusCode.OK)
@@ -159,6 +161,7 @@ public partial class RateLimitSpecs
 
         using var httpClient = new HttpClient(
             new QueueHttpMessageHandler([
+                new HttpResponseMessage(HttpStatusCode.Unauthorized),
                 new HttpResponseMessage(HttpStatusCode.OK),
                 rateLimitResponse,
                 new HttpResponseMessage(HttpStatusCode.OK)
@@ -214,6 +217,7 @@ public partial class RateLimitSpecs
         );
         using var httpClient = new HttpClient(
             new QueueHttpMessageHandler([
+                new HttpResponseMessage(HttpStatusCode.Unauthorized),
                 new HttpResponseMessage(HttpStatusCode.OK),
                 retryResponse,
                 new HttpResponseMessage(HttpStatusCode.OK)
