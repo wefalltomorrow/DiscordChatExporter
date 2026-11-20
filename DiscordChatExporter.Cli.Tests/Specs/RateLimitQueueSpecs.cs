@@ -14,10 +14,8 @@ namespace DiscordChatExporter.Cli.Tests.Specs;
 
 public partial class RateLimitSpecs
 {
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Already_queued_requests_wait_for_cooldown(bool hardLimit)
+    [Fact]
+    public async Task Already_queued_requests_wait_for_advisory_cooldown()
     {
         var firstEntered = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously
@@ -45,8 +43,6 @@ public partial class RateLimitSpecs
                     {
                         firstEntered.TrySetResult();
                         await releaseResponse.Task.WaitAsync(ct);
-                        if (hardLimit)
-                            return CreateRateLimitResponse(TimeSpan.FromSeconds(2));
                         var response = new HttpResponseMessage(HttpStatusCode.NotFound);
                         response.Headers.Add("X-RateLimit-Remaining", "0");
                         response.Headers.Add("X-RateLimit-Reset-After", "2");
@@ -96,6 +92,7 @@ public partial class RateLimitSpecs
         using var cancellation = new CancellationTokenSource();
         using var http = new HttpClient(
             new QueueHttpMessageHandler([
+                new(HttpStatusCode.Unauthorized),
                 new(HttpStatusCode.OK),
                 CreateRateLimitResponse(TimeSpan.FromSeconds(120)),
                 new(HttpStatusCode.NotFound),
@@ -128,7 +125,7 @@ public partial class RateLimitSpecs
             .AsTask()
             .WaitAsync(TimeSpan.FromSeconds(5));
         waits.Should().Be(2);
-        client.GetRequestStats().RequestCount.Should().Be(3);
+        client.GetRequestStats().RequestCount.Should().Be(4);
     }
 
     [Fact]

@@ -567,6 +567,17 @@ public class DiscordClient(
                             innerContext.CancellationToken
                         );
                         RecordInvalidRequestOrThrow(response);
+
+                        if (
+                            tokenKind == TokenKind.User
+                            && response.StatusCode == HttpStatusCode.TooManyRequests
+                        )
+                        {
+                            RecordHardRateLimit();
+                            throw StopRequests(
+                                "Discord returned HTTP 429 for a user-token request. Further requests from this client have been stopped."
+                            );
+                        }
                     }
                     catch
                     {

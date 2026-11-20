@@ -12,7 +12,7 @@ The fork remains close to upstream while selectively incorporating useful change
 </p>
 
 > [!WARNING]
-> DiscordChatExporter supports both user and bot tokens. Automating regular user accounts may be restricted by Discord's terms or enforcement systems. Bot authentication is preferable where available. The request controls in this fork reduce API load, bursts, and unnecessary retries, but do not guarantee against account restrictions.
+> Discord prohibits automating normal user accounts ("self-bots") and warns that accounts found doing so may be terminated. Its Developer Policy also bars scraping data through Discord services. This fork's user-token export mode automates a normal account. Do not use it if avoiding account enforcement is important. Request pacing, TLS/browser-style transport, and rate-limit handling do not make this use permitted or prevent detection. See Discord's [self-bot policy](https://support.discord.com/hc/en-us/articles/115002192352-Automated-User-Accounts-Self-Bots) and [Developer Policy](https://support-dev.discord.com/hc/en-us/articles/8563934450327-Discord-Developer-Policy).
 
 ## Key improvements
 
@@ -37,7 +37,9 @@ User-token exports are intentionally paced more conservatively than upstream:
 - One user-token Discord API request in flight at a time.
 - Minimum 750 ms interval between user-token request starts.
 - Advisory rate-limit headers are always respected for user tokens.
-- HTTP 429 handling prefers Discord's `retry_after` value and applies progressively larger local cooldowns when rate limits repeat.
+- The first HTTP 429 from a user-token request immediately stops this client; it is not retried, and queued requests are rejected. Bot-token 429 responses use the retry and cooldown policy.
+- Do not automatically restart or resume a stopped user-token run after HTTP 429; the stop is session-local and does not persist across application restarts.
+- Bot-token HTTP 429 handling prefers Discord's `retry_after` value and applies progressively larger local cooldowns when rate limits repeat.
 - Rate-limit pauses are coordinated across the client.
 - Refreshing the GUI with the same token preserves request stops, cooldowns, and cached request history. Rate-limit preference changes apply without resetting the client. Switching credentials or restarting the application starts a new session; stops are not persisted across sessions.
 - Exact 403/404 requests are cached for the remainder of the run to avoid repeated unavailable lookups.
@@ -45,7 +47,7 @@ User-token exports are intentionally paced more conservatively than upstream:
 - Concurrent duplicate metadata lookups are collapsed into a single request.
 - A local circuit breaker stops further requests from the client after an abnormal burst of HTTP 401/403/429 responses.
 - User-token requests retain their request slot through retries and cooldowns so queued requests cannot bypass a newly received limit. Server-requested advisory waits are honored in full, including waits longer than 60 seconds.
-- Exhausting HTTP 429 retries stops subsequent requests from that client. Retry delays also support HTTP-date headers and non-object JSON error bodies.
+- Exhausting bot-token HTTP 429 retries stops subsequent requests from that client. Retry delays also support HTTP-date headers and non-object JSON error bodies.
 - The CLI exits with code **3** when requests have been stopped. Automation must not restart it automatically after this code. The resilient PowerShell wrapper respects this exit code and recognizes restriction/rate-limit errors from older builds, while retaining retries for ordinary connection failures.
 - An explicitly unusable rate-limit duration stops the client instead of falling back to a short retry. This includes negative/nonfinite values, missing reset timing when an advisory bucket is exhausted, and waits beyond the supported timer range. Existing waiters honor cooldown extensions from other in-flight requests.
 - Account verification required (40002), Cloudflare blocking (40333), or lost authentication also stop further requests from the client, including queued channel requests. Review the account or access issue before starting another export. Ordinary missing channel permissions remain scoped to that channel. These stops respond to errors; they do not guarantee prevention of account detection or restrictions.
@@ -62,7 +64,7 @@ User-token exports are intentionally paced more conservatively than upstream:
 
 ### Windows user-token compatibility
 
-On Windows, user-token requests can use the HttpCloak browser/TLS transport together with a Discord-web-style request profile. This includes compatible browser headers, locale/timezone data, session identifiers, and a best-effort current Discord web build number.
+On Windows, user-token requests can use an alternate HTTP/TLS transport for compatibility. It does not make automated user-token requests compliant or protect accounts from Discord enforcement.
 
 Bot tokens use the normal managed HTTP path. Linux and macOS also use managed HTTP.
 
