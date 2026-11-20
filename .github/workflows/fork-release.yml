@@ -158,7 +158,7 @@ jobs:
         shell: bash
         run: |
           cat > release-notes.md <<'EOF'
-          Maintained fork of DiscordChatExporter focused on resilient long-running exports, conservative Discord API usage, and improved archive/search tooling.
+          Maintained fork of DiscordChatExporter focused on resilient long-running exports, explicit Discord API request handling, and improved archive/search tooling.
 
           > **Account enforcement warning:** Discord prohibits automating normal user accounts ("self-bots") and warns that accounts found doing so may be terminated. Its Developer Policy also bars scraping data through Discord services. This fork's user-token mode automates a normal account. Do not use it if avoiding account enforcement is important. Request pacing, TLS/browser-style transport, and rate-limit handling do not make this use permitted or prevent detection. See the README and Discord's [self-bot policy](https://support.discord.com/hc/en-us/articles/115002192352-Automated-User-Accounts-Self-Bots) and [Developer Policy](https://support-dev.discord.com/hc/en-us/articles/8563934450327-Discord-Developer-Policy).
 
@@ -167,7 +167,7 @@ jobs:
           - combined `--incremental --resume` continuation to repair interrupted archives and fetch newer messages in one pass
           - manifest-backed setting restoration for CLI resume and incremental updates
           - consistent GUI/CLI continuation behavior, including media/filter/markdown settings
-          - conservative user-token request pacing and coordinated rate-limit handling
+          - user-token request scheduling and coordinated rate-limit handling (request controls, not account-safety protections)
           - shared metadata caching and duplicate-request suppression
           - request-level recovery for malformed or truncated Discord JSON
           - SQLite export, full-text search, library support, and offline conversion

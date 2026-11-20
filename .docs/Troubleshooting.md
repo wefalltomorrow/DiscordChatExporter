@@ -34,9 +34,9 @@ A token can be used to log into your account, so treat it like a password and ne
 
 Follow the [instructions here](Token-and-IDs.md).
 
-### Will I get banned if I use this?
+### Can user-token exports lead to account enforcement?
 
-Automating user accounts is technically against [TOS](https://discord.com/terms), use at your discretion. [Bot accounts](https://discord.com/developers/docs/topics/oauth2#bot-users) don't have this restriction.
+Discord prohibits automating normal user accounts ("self-bots") and warns that accounts found doing so may be terminated. This fork's user-token mode automates a normal account, so using it may lead to account restrictions or termination. Request pacing and transport choices do not make this use permitted or guarantee protection from enforcement. Do not use user-token mode if avoiding account enforcement is important. See Discord's [self-bot policy](https://support.discord.com/hc/en-us/articles/115002192352-Automated-User-Accounts-Self-Bots) and [Developer Policy](https://support-dev.discord.com/hc/en-us/articles/8563934450327-Discord-Developer-Policy).
 
 ### Will the messages disappear from the exported file if I delete a message, delete my account or block a person?
 
