@@ -12,9 +12,9 @@ namespace DiscordChatExporter.Cli.Commands;
 [Command("dm", Description = "Gets the list of all direct message channels.")]
 public partial class GetDirectChannelsCommand : DiscordCommandBase
 {
-    public override async ValueTask ExecuteAsync(IConsole console)
+    protected override async ValueTask ExecuteCoreAsync(IConsole console)
     {
-        await base.ExecuteAsync(console);
+        await base.ExecuteCoreAsync(console);
 
         var cancellationToken = console.RegisterCancellationHandler();
 

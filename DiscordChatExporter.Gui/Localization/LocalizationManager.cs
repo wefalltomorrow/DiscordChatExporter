@@ -102,6 +102,9 @@ public partial class LocalizationManager
     public string ContinueExportFailedTail => Get();
     public string SettingsTooltip => Get();
     public string LibraryTooltip => Get();
+    public string DiagnosticsTitle => Get();
+    public string DiagnosticsNoConnection => Get();
+    public string DiagnosticsCopyButton => Get();
     public string ConversionTooltip => Get();
     public string LastMessageSentTooltip => Get();
     public string TokenPlaceholderText => Get();

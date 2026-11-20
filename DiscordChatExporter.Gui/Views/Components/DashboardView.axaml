@@ -18,7 +18,19 @@
       DockPanel.Dock="Top"
       Orientation="Vertical"
     >
-      <Grid Margin="12,12,8,12" ColumnDefinitions="*,Auto,Auto,Auto,Auto">
+      <Grid Margin="12,12,8,12" ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto">
+        <Button
+          Grid.Column="5"
+          Margin="8,0,0,0"
+          Padding="8"
+          VerticalAlignment="Center"
+          Command="{Binding ShowDiagnosticsCommand}"
+          Theme="{DynamicResource MaterialFlatButton}"
+          ToolTip.Tip="{Binding LocalizationManager.DiagnosticsTitle}"
+          AutomationProperties.Name="{Binding LocalizationManager.DiagnosticsTitle}"
+        >
+          <materialIcons:MaterialIcon Width="24" Height="24" Kind="InformationOutline" />
+        </Button>
         <materialStyles:Card Grid.Column="0">
           <!--  Token  -->
           <TextBox

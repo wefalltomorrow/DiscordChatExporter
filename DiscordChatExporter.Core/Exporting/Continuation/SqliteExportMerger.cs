@@ -62,32 +62,61 @@ public static class SqliteExportMerger
             {
                 await using var transaction = (SqliteTransaction)
                     await connection.BeginTransactionAsync(cancellationToken);
+                await SqliteMetadata.EnsureSchemaAsync(connection, transaction, cancellationToken);
+                var incomingHasRevisions = await SqliteMetadata.HasRevisionsAsync(
+                    connection,
+                    "incoming",
+                    transaction,
+                    cancellationToken
+                );
+                var authorRevisions = incomingHasRevisions
+                    ? "SELECT * FROM incoming.author_revisions"
+                    : $"SELECT {SqliteMetadata.AuthorRevisionExpression}, {SqliteMetadata.AuthorColumns} FROM incoming.authors";
+                var infoRevisions = incomingHasRevisions
+                    ? "SELECT * FROM incoming.export_info_revisions"
+                    : $"SELECT {SqliteMetadata.InfoRevisionExpression}, {SqliteMetadata.InfoColumns} FROM incoming.export_info";
+                var messageAuthorRevision = incomingHasRevisions
+                    ? "m.author_revision_id"
+                    : $"(SELECT {SqliteMetadata.AuthorRevisionExpression} FROM incoming.authors WHERE id = m.author_id)";
+                var messageInfoRevision = incomingHasRevisions
+                    ? "m.export_info_revision_id"
+                    : $"(SELECT {SqliteMetadata.InfoRevisionExpression} FROM incoming.export_info LIMIT 1)";
 
                 await using (var copy = connection.CreateCommand())
                 {
                     copy.Transaction = transaction;
-                    copy.CommandText = """
+                    copy.CommandText = $"""
+                        CREATE TEMP TABLE accepted_messages AS
+                            SELECT id FROM incoming.messages
+                            WHERE CAST(id AS INTEGER) > $cutoff
+                                AND id NOT IN (SELECT id FROM main.messages);
                         INSERT OR IGNORE INTO main.authors SELECT * FROM incoming.authors;
+                        INSERT OR IGNORE INTO main.author_revisions {authorRevisions};
+                        INSERT OR IGNORE INTO main.export_info_revisions {infoRevisions};
                         INSERT OR IGNORE INTO main.messages
-                            SELECT * FROM incoming.messages WHERE CAST(id AS INTEGER) > $cutoff;
+                            (id, type, timestamp, timestamp_edited, call_ended_timestamp,
+                             is_pinned, content, author_id, reference_message_id,
+                             author_revision_id, export_info_revision_id)
+                            SELECT m.id, m.type, m.timestamp, m.timestamp_edited, m.call_ended_timestamp,
+                                m.is_pinned, m.content, m.author_id, m.reference_message_id,
+                                {messageAuthorRevision}, {messageInfoRevision}
+                            FROM incoming.messages m WHERE m.id IN (SELECT id FROM accepted_messages);
                         INSERT INTO main.attachments
                             SELECT a.* FROM incoming.attachments AS a
                             WHERE EXISTS (
-                                SELECT 1 FROM incoming.messages AS m
-                                WHERE m.id = a.message_id AND CAST(m.id AS INTEGER) > $cutoff
+                                SELECT 1 FROM accepted_messages AS m WHERE m.id = a.message_id
                             );
                         INSERT INTO main.reactions
                             SELECT r.* FROM incoming.reactions AS r
                             WHERE EXISTS (
-                                SELECT 1 FROM incoming.messages AS m
-                                WHERE m.id = r.message_id AND CAST(m.id AS INTEGER) > $cutoff
+                                SELECT 1 FROM accepted_messages AS m WHERE m.id = r.message_id
                             );
                         INSERT INTO main.messages_fts (content, message_id)
                             SELECT f.content, f.message_id FROM incoming.messages_fts AS f
                             WHERE EXISTS (
-                                SELECT 1 FROM incoming.messages AS m
-                                WHERE m.id = f.message_id AND CAST(m.id AS INTEGER) > $cutoff
+                                SELECT 1 FROM accepted_messages AS m WHERE m.id = f.message_id
                             );
+                        DROP TABLE accepted_messages;
                         """;
                     copy.Parameters.AddWithValue("$cutoff", (long)cutoff.Cutoff.Value);
                     await copy.ExecuteNonQueryAsync(cancellationToken);
@@ -96,9 +125,12 @@ public static class SqliteExportMerger
                 await using (var update = connection.CreateCommand())
                 {
                     update.Transaction = transaction;
-                    update.CommandText =
-                        "UPDATE export_info SET message_count = (SELECT COUNT(*) FROM main.messages), "
-                        + "exported_at = $now;";
+                    update.CommandText = $"""
+                        UPDATE main.export_info SET
+                            ({SqliteMetadata.InfoColumns}) =
+                                (SELECT {SqliteMetadata.InfoColumns} FROM incoming.export_info LIMIT 1),
+                            message_count = (SELECT COUNT(*) FROM main.messages), exported_at = $now;
+                        """;
                     update.Parameters.AddWithValue(
                         "$now",
                         exportedAt.ToString("o", CultureInfo.InvariantCulture)

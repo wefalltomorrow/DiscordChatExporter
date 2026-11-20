@@ -83,6 +83,16 @@ You can quickly export with DCE's default settings by using just `-t token` and 
 You can change the export format to `HtmlDark`, `HtmlLight`, `PlainText`, `Json`, `Csv`, or `Db` with `-f format`.
 The `Db` format writes a SQLite `.db` file. The default format is `HtmlDark`.
 
+SQLite archives retain observed author profiles in `author_revisions` and guild/channel metadata
+in `export_info_revisions`. Join each message's `author_revision_id` and `export_info_revision_id`
+to those tables' `revision_id` columns to read the metadata saved with that message. Identical
+snapshots are shared. The compatibility `authors` table keeps the first observed profile;
+`export_info` shows the latest export metadata. Library search uses the per-message author profile.
+
+Continuing an older SQLite archive upgrades its schema transactionally and preserves its existing
+metadata as the initial snapshot. Failed merges roll back that upgrade. These are observations
+made during exports, not a reconstruction of profile changes that happened between exports.
+
 ```console
 ./DiscordChatExporter.Cli export -t "mfa.Ifrn" -c 53555 -f Json
 ```
@@ -292,7 +302,7 @@ successful channel export.
 
 #### Updating an existing export with new messages
 
-Use `--incremental` to update an existing completed export with messages posted after the last
+Use `--incremental` to update an existing export with messages posted after the last
 message already stored in that export.
 
 ```console
@@ -302,7 +312,7 @@ message already stored in that export.
 Incremental mode is different from `--resume`:
 
 - `--resume` finishes an interrupted multi-channel run and skips channels already recorded as complete.
-- `--incremental` opens an existing completed export, fetches messages after its last exported message,
+- `--incremental` opens an existing export (complete or incomplete), fetches messages after its last stored message,
   merges the new messages into the existing file, and refreshes `manifest.json`.
 - Channels that do not have a previous export in the manifest are exported normally.
 
@@ -314,7 +324,13 @@ manifest instead of silently using current defaults.
 If an older v1 manifest is encountered, the CLI uses the options supplied for that run and stores them
 in the upgraded manifest after a successful incremental update.
 
-`--incremental` cannot be combined with `--resume` or `--checkpoint`. Partitioned and
+You can combine `--incremental --resume` in a single repeatable command: new channels are exported,
+incomplete archives continue from the last message actually stored, and completed archives receive
+new messages. Incremental mode already checkpoints completed work, so adding `--checkpoint` is
+also accepted but does not change its behavior. Metadata is fetched once per run through the shared
+export cache, rather than running separate resume and incremental passes.
+
+Partitioned and
 reverse-chronological exports are not currently supported for incremental continuation.
 
 #### Including threads

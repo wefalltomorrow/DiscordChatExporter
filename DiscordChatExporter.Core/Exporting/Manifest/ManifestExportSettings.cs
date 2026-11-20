@@ -20,12 +20,19 @@ public sealed record ManifestExportSettings(
     bool ShouldDownloadAssets,
     bool ShouldReuseAssets,
     string? Locale,
-    bool IsUtcNormalizationEnabled
+    bool IsUtcNormalizationEnabled,
+    // Older manifests and raw GUI settings interpret relative paths from the working directory.
+    bool AssetsDirRelativeToExport = false
 )
 {
     public static ManifestExportSettings FromRequest(ExportRequest request) =>
         new(
-            request.HasExplicitAssetsDirPath ? request.AssetsDirPath : null,
+            request.HasExplicitAssetsDirPath
+                ? ExportAssetPath.GetPortablePath(
+                    request.AssetReferenceDirPath,
+                    request.AssetsDirPath
+                )
+                : null,
             !request.HasExplicitAssetsDirPath,
             request.After?.ToString(),
             request.Before?.ToString(),
@@ -36,7 +43,8 @@ public sealed record ManifestExportSettings(
             request.ShouldDownloadAssets,
             request.ShouldReuseAssets,
             request.Locale,
-            request.IsUtcNormalizationEnabled
+            request.IsUtcNormalizationEnabled,
+            AssetsDirRelativeToExport: true
         );
 
     public static ManifestExportSettings FromValues(
@@ -71,10 +79,16 @@ public sealed record ManifestExportSettings(
     {
         var current = FromRequest(request);
 
-        return string.Equals(
-                current.AssetsDirPath,
-                AssetsDirPath,
-                System.StringComparison.OrdinalIgnoreCase
+        return (
+                UsesDefaultAssetsDir
+                || (
+                    !string.IsNullOrWhiteSpace(AssetsDirPath)
+                    && FileSystemPathComparer.AreSamePath(
+                        ResolveAssetsDirPath(request.OutputFilePath)!,
+                        request.AssetsDirPath,
+                        FileSystemPathComparer.GetComparerForPath
+                    )
+                )
             )
             && current.UsesDefaultAssetsDir == UsesDefaultAssetsDir
             && current.After == After
@@ -111,7 +125,7 @@ public sealed record ManifestExportSettings(
             guild,
             channel,
             existingFilePath,
-            UsesDefaultAssetsDir ? null : AssetsDirPath,
+            UsesDefaultAssetsDir ? null : ResolveAssetsDirPath(existingFilePath),
             format,
             after,
             before,
@@ -157,7 +171,7 @@ public sealed record ManifestExportSettings(
         var assetsDirPath =
             ShouldDownloadAssets && UsesDefaultAssetsDir
                 ? $"{existingFilePath}_Files{Path.DirectorySeparatorChar}"
-                : AssetsDirPath;
+                : ResolveAssetsDirPath(existingFilePath);
 
         return new ExportRequest(
             guild,
@@ -175,6 +189,17 @@ public sealed record ManifestExportSettings(
             ShouldReuseAssets,
             Locale,
             IsUtcNormalizationEnabled
-        );
+        )
+        {
+            AssetReferenceDirPath = Path.GetDirectoryName(Path.GetFullPath(existingFilePath))!,
+        };
     }
+
+    private string? ResolveAssetsDirPath(string existingFilePath) =>
+        AssetsDirRelativeToExport && !string.IsNullOrWhiteSpace(AssetsDirPath)
+            ? Path.GetFullPath(
+                AssetsDirPath,
+                Path.GetDirectoryName(Path.GetFullPath(existingFilePath))!
+            )
+            : AssetsDirPath;
 }

@@ -21,6 +21,9 @@ public partial class ExportRequest
 
     public string OutputDirPath { get; }
 
+    // Continuation writes to a temporary file, but its links belong to the final archive.
+    public string AssetReferenceDirPath { get; init; }
+
     public string AssetsDirPath { get; }
 
     public bool HasExplicitAssetsDirPath { get; }
@@ -84,6 +87,7 @@ public partial class ExportRequest
         OutputFilePath = GetOutputBaseFilePath(Guild, Channel, outputPath, Format, After, Before);
 
         OutputDirPath = Path.GetDirectoryName(OutputFilePath)!;
+        AssetReferenceDirPath = OutputDirPath;
 
         HasExplicitAssetsDirPath = !string.IsNullOrWhiteSpace(assetsDirPath);
         AssetsDirPath = HasExplicitAssetsDirPath

@@ -1,8 +1,10 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using DiscordChatExporter.Core.Discord;
+using DiscordChatExporter.Core.Exporting.Library;
 
 namespace DiscordChatExporter.Core.Exporting.Continuation;
 
@@ -27,41 +29,102 @@ public static class ContinuationFormat
     public static bool IsSupportedExtension(string filePath) =>
         TryGetFormatForExtension(GetExtension(filePath)) is not null;
 
+    public static bool IsSupported(ExportFormat format) =>
+        format
+            is ExportFormat.Json
+                or ExportFormat.HtmlDark
+                or ExportFormat.HtmlLight
+                or ExportFormat.Csv
+                or ExportFormat.Db;
+
     public static ExportFormat FormatFor(string filePath)
     {
         var extension = GetExtension(filePath);
         return TryGetFormatForExtension(extension) ?? throw UnsupportedExtension(extension);
     }
 
-    public static async ValueTask<ContinuationCutoff> ReadCutoffAsync(
+    // A picked file may have a custom extension. Prefer its catalogued format when available.
+    public static async ValueTask<ExportFormat> ResolveFormatAsync(
         string filePath,
         CancellationToken cancellationToken = default
+    )
+    {
+        var fullPath = Path.GetFullPath(filePath);
+        var entries = await ExportCatalogBuilder.BuildFromDirectoriesAsync(
+            [Path.GetDirectoryName(fullPath)!],
+            cancellationToken
+        );
+        var entry = entries.FirstOrDefault(e =>
+            string.Equals(
+                e.File,
+                fullPath,
+                OperatingSystem.IsWindows()
+                    ? StringComparison.OrdinalIgnoreCase
+                    : StringComparison.Ordinal
+            )
+        );
+        if (entry is null)
+            return FormatFor(filePath);
+
+        if (!Enum.TryParse<ExportFormat>(entry.Format, out var format) || !IsSupported(format))
+            throw new InvalidExportException(
+                $"Continuing {entry.Format} exports is not supported."
+            );
+
+        if (entry.Partitioned)
+            throw new InvalidExportException("Continuing partitioned exports is not supported.");
+
+        return format;
+    }
+
+    public static ValueTask<ContinuationCutoff> ReadCutoffAsync(
+        string filePath,
+        CancellationToken cancellationToken = default
+    ) => ReadCutoffAsync(filePath, FormatFor(filePath), cancellationToken);
+
+    public static async ValueTask<ContinuationCutoff> ReadCutoffAsync(
+        string filePath,
+        ExportFormat format,
+        CancellationToken cancellationToken = default
     ) =>
-        FormatFor(filePath) switch
+        format switch
         {
             ExportFormat.Json => await ReadJsonAsync(filePath, cancellationToken),
-            ExportFormat.HtmlDark => await HtmlExportInspector.InspectAsync(
-                filePath,
-                cancellationToken
-            ),
+            ExportFormat.HtmlDark or ExportFormat.HtmlLight =>
+                await HtmlExportInspector.InspectAsync(filePath, cancellationToken),
             ExportFormat.Csv => await CsvExportInspector.InspectAsync(filePath, cancellationToken),
             ExportFormat.Db => await SqliteExportInspector.InspectAsync(
                 filePath,
                 cancellationToken
             ),
-            var format => throw new InvalidExportException(
-                $"Continuing {format} exports is not supported."
-            ),
+            _ => throw new InvalidExportException($"Continuing {format} exports is not supported."),
         };
 
-    public static async ValueTask<long> MergeAsync(
+    public static ValueTask<long> MergeAsync(
         string existingFilePath,
         string newMessagesFilePath,
         ContinuationCutoff cutoff,
         DateTimeOffset exportedAt,
         CancellationToken cancellationToken = default
     ) =>
-        FormatFor(existingFilePath) switch
+        MergeAsync(
+            existingFilePath,
+            newMessagesFilePath,
+            cutoff,
+            exportedAt,
+            FormatFor(existingFilePath),
+            cancellationToken
+        );
+
+    public static async ValueTask<long> MergeAsync(
+        string existingFilePath,
+        string newMessagesFilePath,
+        ContinuationCutoff cutoff,
+        DateTimeOffset exportedAt,
+        ExportFormat format,
+        CancellationToken cancellationToken = default
+    ) =>
+        format switch
         {
             ExportFormat.Json => await JsonExportMerger.MergeAsync(
                 existingFilePath,
@@ -69,7 +132,7 @@ public static class ContinuationFormat
                 exportedAt,
                 cancellationToken
             ),
-            ExportFormat.HtmlDark => await HtmlExportMerger.MergeAsync(
+            ExportFormat.HtmlDark or ExportFormat.HtmlLight => await HtmlExportMerger.MergeAsync(
                 existingFilePath,
                 newMessagesFilePath,
                 cutoff,
@@ -93,9 +156,7 @@ public static class ContinuationFormat
                 exportedAt,
                 cancellationToken
             ),
-            var format => throw new InvalidExportException(
-                $"Continuing {format} exports is not supported."
-            ),
+            _ => throw new InvalidExportException($"Continuing {format} exports is not supported."),
         };
 
     private static async ValueTask<ContinuationCutoff> ReadJsonAsync(

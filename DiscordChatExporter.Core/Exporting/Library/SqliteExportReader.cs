@@ -35,14 +35,23 @@ public static class SqliteExportReader
                 }.ToString()
             );
             await connection.OpenAsync(cancellationToken);
+            var hasRevisions = await SqliteMetadata.HasRevisionsAsync(
+                connection,
+                "main",
+                null,
+                cancellationToken
+            );
+            var authorJoin = hasRevisions
+                ? "LEFT JOIN author_revisions a ON a.revision_id = m.author_revision_id"
+                : "LEFT JOIN authors a ON a.id = m.author_id";
 
             using var command = connection.CreateCommand();
-            command.CommandText = """
+            command.CommandText = $"""
                 SELECT m.id, m.timestamp, a.name,
                        snippet(messages_fts, 0, '«', '»', '…', 16)
                 FROM messages_fts
                 JOIN messages m ON m.id = messages_fts.message_id
-                LEFT JOIN authors a ON a.id = m.author_id
+                {authorJoin}
                 WHERE messages_fts MATCH $q
                 ORDER BY rank
                 LIMIT $limit;

@@ -27,9 +27,9 @@ public partial class GetChannelsCommand : DiscordCommandBase
     )]
     public ThreadInclusionMode ThreadInclusionMode { get; set; } = ThreadInclusionMode.None;
 
-    public override async ValueTask ExecuteAsync(IConsole console)
+    protected override async ValueTask ExecuteCoreAsync(IConsole console)
     {
-        await base.ExecuteAsync(console);
+        await base.ExecuteCoreAsync(console);
 
         var cancellationToken = console.RegisterCancellationHandler();
 

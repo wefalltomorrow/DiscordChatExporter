@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Threading;
@@ -51,39 +52,45 @@ public class DiscordClient(
         && !string.Equals(disabledValue, "yes", StringComparison.OrdinalIgnoreCase)
         && !string.Equals(disabledValue, "on", StringComparison.OrdinalIgnoreCase);
 
-    internal static bool IsBrowserTransportSupported =>
-        ShouldUseBrowserTransport(
-            Environment.GetEnvironmentVariable(DisableBrowserTransportEnvironmentVariable),
-            OperatingSystem.IsWindows()
-        );
-
-    private static Session? TryCreateBrowserSession()
+    internal static (T? Session, string Reason) InitializeBrowserTransport<T>(
+        bool isWindows,
+        string? disabledValue,
+        Func<T> createSession
+    )
+        where T : class
     {
-        if (!IsBrowserTransportSupported)
-            return null;
+        if (!isWindows)
+            return (null, "Browser transport is supported only on Windows.");
+        if (!ShouldUseBrowserTransport(disabledValue, isWindows))
+            return (null, "Browser transport was disabled by the environment override.");
 
         try
         {
-            return new Session(preset: Presets.Chrome150Windows, retry: 0);
+            return (createSession(), "Browser transport initialized successfully.");
         }
-        catch
+        catch (Exception ex)
         {
             // Browser impersonation is an enhancement, not a reason to make the
             // exporter unusable. Fall back to managed HttpClient if the native
             // transport cannot initialize on this system.
-            return null;
+            // Exception messages can contain machine paths or other private data.
+            return (null, $"Browser transport initialization failed ({ex.GetType().Name}).");
         }
     }
 
     private readonly Uri _baseUri = new("https://discord.com/api/v10/", UriKind.Absolute);
     private readonly HttpClient _httpClient = Http.Client;
-    private readonly Session? _session = TryCreateBrowserSession();
+    private readonly (Session? Session, string Reason) _browserTransport =
+        InitializeBrowserTransport(
+            OperatingSystem.IsWindows(),
+            Environment.GetEnvironmentVariable(DisableBrowserTransportEnvironmentVariable),
+            () => new Session(preset: Presets.Chrome150Windows, retry: 0)
+        );
     private readonly DiscordUserClientProfile _userClientProfile = new();
     private readonly Func<TimeSpan, CancellationToken, ValueTask> _delayAsync = static (
         delay,
         cancellationToken
     ) => new ValueTask(Task.Delay(delay, cancellationToken));
-    private readonly bool _useBrowserTransport = IsBrowserTransportSupported;
     private readonly bool _refreshUserClientBuildNumber = true;
     private readonly object _rateLimitSync = new();
     private readonly object _invalidRequestSync = new();
@@ -110,6 +117,8 @@ public class DiscordClient(
     private long _avoidedUnavailableRequestCount;
     private long _hardRateLimitCount;
     private long _advisoryPauseCount;
+    private string? _lastRequestTransport;
+    private int _lastResponseStatus;
     private TokenKind? _resolvedTokenKind;
 
     public event EventHandler<RateLimitState>? RateLimitChanged;
@@ -123,9 +132,8 @@ public class DiscordClient(
         : this(tokenOverride, rateLimitPreferenceOverride)
     {
         _httpClient = httpClient;
-        _session?.Dispose();
-        _session = null;
-        _useBrowserTransport = false;
+        _browserTransport.Session?.Dispose();
+        _browserTransport = (null, "A managed HTTP client was supplied.");
         _refreshUserClientBuildNumber = false;
         _userRequestStartInterval = TimeSpan.Zero;
 
@@ -323,6 +331,38 @@ public class DiscordClient(
             Interlocked.Read(ref _advisoryPauseCount)
         );
 
+    public string GetDiagnosticSummary()
+    {
+        var stats = GetRequestStats();
+        var transport =
+            _resolvedTokenKind == TokenKind.Bot ? "HttpClient (bot token)"
+            : _browserTransport.Session is not null ? "HttpCloak"
+            : "HttpClient";
+        var reason =
+            _resolvedTokenKind == TokenKind.Bot
+                ? "Bot requests use the managed transport."
+                : _browserTransport.Reason;
+        var status = Volatile.Read(ref _lastResponseStatus);
+        return $"""
+            Core version: {typeof(DiscordClient).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion}
+            OS: {System.Runtime.InteropServices.RuntimeInformation.OSDescription}
+            Architecture: {System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}
+            Token kind: {_resolvedTokenKind?.ToString() ?? "not resolved"}
+            {(
+                _resolvedTokenKind is null
+                    ? "Configured user-token transport"
+                    : "Selected transport"
+            )}: {transport}
+            {reason}
+            Last attempted request transport: {Volatile.Read(ref _lastRequestTransport) ?? "none"}
+            Last HTTP response: {(
+                status != 0 ? status.ToString(CultureInfo.InvariantCulture) : "none"
+            )}
+            User-token pacing: {UserRequestConcurrencyLimit} request slot, {UserRequestStartInterval.TotalMilliseconds} ms between request starts
+            Client totals: {stats.RequestCount} API requests, {stats.HardRateLimitCount} HTTP 429 responses, {stats.AdvisoryPauseCount} advisory pauses, {stats.AvoidedUnavailableRequestCount} unavailable requests avoided
+            """;
+    }
+
     private void RecordInvalidRequestOrThrow(HttpResponseMessage response)
     {
         if (
@@ -415,13 +455,10 @@ public class DiscordClient(
 
                         Interlocked.Increment(ref _apiRequestCount);
 
-                        if (
-                            tokenKind == TokenKind.User
-                            && _useBrowserTransport
-                            && _session is not null
-                        )
+                        if (tokenKind == TokenKind.User && _browserTransport.Session is not null)
                         {
-                            var cloakResponse = await _session.GetAsync(
+                            Volatile.Write(ref _lastRequestTransport, "HttpCloak");
+                            var cloakResponse = await _browserTransport.Session.GetAsync(
                                 requestUri.ToString(),
                                 headers: headers,
                                 cancellationToken: innerContext.CancellationToken
@@ -431,6 +468,7 @@ public class DiscordClient(
                         }
                         else
                         {
+                            Volatile.Write(ref _lastRequestTransport, "HttpClient");
                             using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
                             foreach (var (name, value) in headers)
                                 request.Headers.TryAddWithoutValidation(name, value);
@@ -447,6 +485,7 @@ public class DiscordClient(
                         requestGate.Release();
                     }
 
+                    Volatile.Write(ref _lastResponseStatus, (int)response.StatusCode);
                     RecordInvalidRequestOrThrow(response);
 
                     if (response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.NotFound)
@@ -631,7 +670,9 @@ public class DiscordClient(
 
     private async ValueTask<JsonElement?> TryGetJsonResponseAsync(
         string url,
-        CancellationToken cancellationToken = default
+        CancellationToken cancellationToken = default,
+        bool allowForbidden = false,
+        bool allowUnknownEmoji = false
     )
     {
         Exception? lastJsonException = null;
@@ -644,6 +685,29 @@ public class DiscordClient(
             {
                 if (response.StatusCode == HttpStatusCode.NotFound)
                     return null;
+                if (allowForbidden && response.StatusCode == HttpStatusCode.Forbidden)
+                    return null;
+                if (allowUnknownEmoji && response.StatusCode == HttpStatusCode.BadRequest)
+                {
+                    // Only the reaction-user lookup may tolerate Discord's Unknown Emoji error.
+                    // Other bad requests, including malformed error bodies, remain failures.
+                    try
+                    {
+                        var error = await response.Content.ReadAsJsonAsync(cancellationToken);
+                        if (
+                            error.ValueKind == JsonValueKind.Object
+                            && error.TryGetProperty("code", out var code)
+                            && code.ValueKind == JsonValueKind.Number
+                            && code.TryGetInt32(out var value)
+                            && value == 10014
+                        )
+                            return null;
+                    }
+                    catch (Exception ex) when (IsJsonParseFailure(ex))
+                    {
+                        // Preserve the normal HTTP failure below.
+                    }
+                }
 
                 throw await CreateFailedResponseExceptionAsync(url, response, cancellationToken);
             }
@@ -984,7 +1048,11 @@ public class DiscordClient(
         CancellationToken cancellationToken = default
     )
     {
-        var response = await TryGetJsonResponseAsync($"channels/{channelId}", cancellationToken);
+        var response = await TryGetJsonResponseAsync(
+            $"channels/{channelId}",
+            cancellationToken,
+            allowForbidden: true
+        );
         if (response is null)
             return null;
 
@@ -1544,9 +1612,13 @@ public class DiscordClient(
                 .SetQueryParameter("after", currentAfter.ToString())
                 .Build();
 
-            // Can be null on reactions with an emoji that has been deleted (?)
+            // Deleted or unavailable emoji can return 404 or 400 with code 10014.
             // https://github.com/Tyrrrz/DiscordChatExporter/issues/1226
-            var response = await TryGetJsonResponseAsync(url, cancellationToken);
+            var response = await TryGetJsonResponseAsync(
+                url,
+                cancellationToken,
+                allowUnknownEmoji: true
+            );
             if (response is null)
                 yield break;
 
@@ -1567,7 +1639,7 @@ public class DiscordClient(
 
     public void Dispose()
     {
-        _session?.Dispose();
+        _browserTransport.Session?.Dispose();
         _userRequestGate.Dispose();
         _botRequestGate.Dispose();
         _userRequestStartGate.Dispose();

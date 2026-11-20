@@ -79,10 +79,20 @@ internal class SqliteMessageWriter : MessageWriter
 
     private readonly string _databaseFilePath;
 
-    // The same author recurs across most messages; remember the ids we've already inserted so we
-    // don't issue an INSERT OR IGNORE round-trip per message (M inserts) when A distinct authors
-    // would do (A << M).
-    private readonly HashSet<Snowflake> _seenAuthorIds = [];
+    // Cache complete observed profiles, so a changed name/avatar creates a new revision.
+    private readonly Dictionary<AuthorProfile, string> _authorRevisions = [];
+
+    private sealed record AuthorProfile(
+        string Id,
+        string Name,
+        string? Discriminator,
+        string? Nickname,
+        string? Color,
+        bool IsBot,
+        string AvatarUrl
+    );
+
+    private string? _infoRevisionId;
     private SqliteConnection? _connection;
     private SqliteTransaction? _transaction;
     private SqliteCommand? _insertMessageCommand;
@@ -192,15 +202,22 @@ internal class SqliteMessageWriter : MessageWriter
             Context.NormalizeDate(DateTimeOffset.UtcNow).ToString("o", CultureInfo.InvariantCulture)
         );
         await command.ExecuteNonQueryAsync(cancellationToken);
+        await SqliteMetadata.EnsureSchemaAsync(_connection, _transaction, cancellationToken);
+        using (var infoRevision = _connection.CreateCommand())
+        {
+            infoRevision.Transaction = _transaction;
+            infoRevision.CommandText = "SELECT revision_id FROM export_info_revisions LIMIT 1;";
+            _infoRevisionId = (string)(await infoRevision.ExecuteScalarAsync(cancellationToken))!;
+        }
 
         _insertMessageCommand = CreatePreparedCommand(
             """
             INSERT OR IGNORE INTO messages
                 (id, type, timestamp, timestamp_edited, call_ended_timestamp,
-                 is_pinned, content, author_id, reference_message_id)
+                 is_pinned, content, author_id, reference_message_id, author_revision_id, export_info_revision_id)
             VALUES
                 ($id, $type, $timestamp, $timestampEdited, $callEnded,
-                 $isPinned, $content, $authorId, $referenceMessageId);
+                 $isPinned, $content, $authorId, $referenceMessageId, $authorRevisionId, $infoRevisionId);
             """,
             "$id",
             "$type",
@@ -210,7 +227,9 @@ internal class SqliteMessageWriter : MessageWriter
             "$isPinned",
             "$content",
             "$authorId",
-            "$referenceMessageId"
+            "$referenceMessageId",
+            "$authorRevisionId",
+            "$infoRevisionId"
         );
         _insertMessageFtsCommand = CreatePreparedCommand(
             "INSERT INTO messages_fts (content, message_id) VALUES ($content, $messageId);",
@@ -244,6 +263,10 @@ internal class SqliteMessageWriter : MessageWriter
             """
             INSERT OR IGNORE INTO authors (id, name, discriminator, nickname, color, is_bot, avatar_url)
             VALUES ($id, $name, $discriminator, $nickname, $color, $isBot, $avatarUrl);
+            INSERT OR IGNORE INTO author_revisions
+            VALUES (dce_revision(json_array($id, $name, $discriminator, $nickname, $color, $isBot, $avatarUrl)),
+                $id, $name, $discriminator, $nickname, $color, $isBot, $avatarUrl);
+            SELECT dce_revision(json_array($id, $name, $discriminator, $nickname, $color, $isBot, $avatarUrl));
             """,
             "$id",
             "$name",
@@ -269,7 +292,7 @@ internal class SqliteMessageWriter : MessageWriter
         var authorId = message.Author.Id.ToString();
         var referenceMessageId = message.Reference?.MessageId?.ToString();
 
-        await WriteAuthorAsync(message.Author, cancellationToken);
+        var authorRevisionId = await WriteAuthorAsync(message.Author, cancellationToken);
 
         var insertMessageCommand = _insertMessageCommand!;
         // OR IGNORE: a repeated message id (e.g. a pagination-boundary duplicate) is skipped
@@ -295,6 +318,8 @@ internal class SqliteMessageWriter : MessageWriter
         SetParameter(insertMessageCommand, "$content", content);
         SetParameter(insertMessageCommand, "$authorId", authorId);
         SetParameter(insertMessageCommand, "$referenceMessageId", referenceMessageId);
+        SetParameter(insertMessageCommand, "$authorRevisionId", authorRevisionId);
+        SetParameter(insertMessageCommand, "$infoRevisionId", _infoRevisionId);
         var messageRows = await insertMessageCommand.ExecuteNonQueryAsync(cancellationToken);
 
         // The message id already existed and was ignored above; skip its dependent rows so the
@@ -337,14 +362,21 @@ internal class SqliteMessageWriter : MessageWriter
         }
     }
 
-    private async ValueTask WriteAuthorAsync(User user, CancellationToken cancellationToken)
+    private async ValueTask<string> WriteAuthorAsync(User user, CancellationToken cancellationToken)
     {
-        // Already inserted this author in this export; the row (deduped by id) is unchanged.
-        if (!_seenAuthorIds.Add(user.Id))
-            return;
-
         var userId = user.Id.ToString();
         var member = Context.TryGetMember(user.Id);
+        var profile = new AuthorProfile(
+            userId,
+            user.Name,
+            user.DiscriminatorFormatted,
+            member?.DisplayName ?? user.DisplayName,
+            Context.TryGetUserColor(user.Id)?.ToHexString(),
+            user.IsBot,
+            member?.AvatarUrl ?? user.AvatarUrl
+        );
+        if (_authorRevisions.TryGetValue(profile, out var revisionId))
+            return revisionId;
 
         var insertAuthorCommand = _insertAuthorCommand!;
         // OR IGNORE dedupes by the author id primary key.
@@ -366,7 +398,9 @@ internal class SqliteMessageWriter : MessageWriter
                 cancellationToken
             )
         );
-        await insertAuthorCommand.ExecuteNonQueryAsync(cancellationToken);
+        revisionId = (string)(await insertAuthorCommand.ExecuteScalarAsync(cancellationToken))!;
+        _authorRevisions.Add(profile, revisionId);
+        return revisionId;
     }
 
     public override async ValueTask WritePostambleAsync(

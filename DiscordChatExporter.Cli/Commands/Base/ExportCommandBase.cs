@@ -133,13 +133,13 @@ public abstract class ExportCommandBase : DiscordCommandBase
     [CommandOption(
         "resume",
         Description = "Resume a previous multi-channel export by restoring manifest-backed settings, verifying completed outputs, "
-            + "and checkpointing channels as they finish."
+            + "and checkpointing channels as they finish. Combine with --incremental to also update completed channels."
     )]
     public bool ShouldResume { get; set; }
 
     [CommandOption(
         "incremental",
-        Description = "Update existing completed exports with messages posted since their last exported message. "
+        Description = "Continue existing exports from their last stored message, including incomplete exports. "
             + "Existing export settings are restored from manifest.json. Channels with no previous export are exported normally."
     )]
     public bool ShouldIncremental { get; set; }
@@ -227,14 +227,6 @@ public abstract class ExportCommandBase : DiscordCommandBase
     protected async ValueTask ExportAsync(IConsole console, IReadOnlyList<Channel> channels)
     {
         var cancellationToken = console.RegisterCancellationHandler();
-
-        if (ShouldIncremental && (ShouldResume || ShouldCheckpoint))
-        {
-            throw new CommandException(
-                "Option --incremental cannot be combined with --resume or --checkpoint. "
-                    + "Incremental mode already resumes incomplete channels and checkpoints completed work."
-            );
-        }
 
         // Asset reuse can only be enabled if the download assets option is set
         // https://github.com/Tyrrrz/DiscordChatExporter/issues/425
@@ -476,7 +468,7 @@ public abstract class ExportCommandBase : DiscordCommandBase
 
         var skippedCompletedCount = 0;
 
-        if (ShouldResume && exportJobs.Count > 0)
+        if (ShouldResume && !ShouldIncremental && exportJobs.Count > 0)
         {
             var manifestsByDir = new Dictionary<string, ExportManifest?>(
                 StringComparer.OrdinalIgnoreCase
@@ -806,6 +798,7 @@ public abstract class ExportCommandBase : DiscordCommandBase
 
         var cutoff = await ContinuationFormat.ReadCutoffAsync(
             state.ExistingFilePath,
+            state.Format,
             cancellationToken
         );
 
@@ -854,6 +847,7 @@ public abstract class ExportCommandBase : DiscordCommandBase
                 tempPath,
                 cutoff,
                 DateTimeOffset.Now,
+                state.Format,
                 cancellationToken
             );
 
@@ -986,7 +980,7 @@ public abstract class ExportCommandBase : DiscordCommandBase
         IncrementalExportState? Incremental = null
     );
 
-    public override async ValueTask ExecuteAsync(IConsole console)
+    protected override async ValueTask ExecuteCoreAsync(IConsole console)
     {
         // Support Ukraine callout
         if (!IsUkraineSupportMessageDisabled)
@@ -1021,6 +1015,6 @@ public abstract class ExportCommandBase : DiscordCommandBase
             console.Output.WriteLine("");
         }
 
-        await base.ExecuteAsync(console);
+        await base.ExecuteCoreAsync(console);
     }
 }
