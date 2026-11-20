@@ -1,5 +1,13 @@
 # Using the GUI
 
+> [!CAUTION]
+> Discord prohibits automating normal user accounts ("self-bots") and warns that accounts found doing so may be terminated. Its
+> Developer Policy also prohibits scraping data through Discord services. This app's personal-account mode automates a normal
+> account to export messages. Do not use it if you need to avoid account restrictions or termination. Low parallelism, request
+> pacing, and HTTP/TLS transport do not make this use permitted or protect accounts from enforcement. See Discord's [self-bot
+> policy](https://support.discord.com/hc/en-us/articles/115002192352-Automated-User-Accounts-Self-Bots) and [Developer
+> Policy](https://support-dev.discord.com/hc/en-us/articles/8563934450327-Discord-Developer-Policy).
+
 ## Video tutorial
 
 [![Video tutorial](https://i.ytimg.com/vi/jjtu0VQXV7I/hqdefault.jpg)](https://youtube.com/watch?v=jjtu0VQXV7I)
@@ -121,7 +129,8 @@ Default: none
 Default: 1
 
   > **Note**:
-  > Try to keep this number low so that your account doesn't get flagged.
+  > This setting controls export concurrency. Lower values reduce simultaneous channel work, but do not make personal-account
+  > automation permitted or protect accounts from enforcement.
 
 - **Normalize to UTC** - Convert all dates to UTC before exporting.
 
