@@ -17,7 +17,7 @@ public partial class LocalizationManager
         // Token instructions (personal account)
         [nameof(TokenPersonalHeader)] = "Token für Ihr persönliches Konto abrufen:",
         [nameof(TokenPersonalTosWarning)] =
-            "*  Das Automatisieren von Benutzerkonten verstößt technisch gegen die AGB — **auf eigene Gefahr**!",
+            "**Kontorisiko:** Discord verbietet die Automatisierung normaler Benutzerkonten („Self-Bots“) und weist darauf hin, dass solche Konten gekündigt werden können. Die Entwickler-Richtlinie verbietet außerdem das Scrapen von Daten über Discord-Dienste. Dieser persönliche Kontomodus automatisiert ein normales Konto, um Nachrichten zu exportieren. Abfrageintervalle und HTTP/TLS-Transport machen diese Nutzung nicht zulässig und garantieren keine Kontosicherheit. Wenn du Kontobeschränkungen oder eine Kündigung vermeiden musst, verwende diesen Modus nicht. Lies Discords [Self-Bot-Richtlinie](https://support.discord.com/hc/en-us/articles/115002192352-Automated-User-Accounts-Self-Bots) und [Entwickler-Richtlinie](https://support-dev.discord.com/hc/en-us/articles/8563934450327-Discord-Developer-Policy).",
         [nameof(TokenPersonalInstructions)] = """
             1. Öffnen Sie Discord in Ihrem Webbrowser und melden Sie sich an
             2. Öffnen Sie einen Server oder einen direkten Nachrichtenkanal

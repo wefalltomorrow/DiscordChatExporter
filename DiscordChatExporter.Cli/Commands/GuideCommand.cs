@@ -16,7 +16,13 @@ public partial class GuideCommand : ICommand
             console.Output.WriteLine("To get the token for your personal account:");
 
         console.Output.WriteLine(
-            " *  Automating user accounts is technically against TOS — USE AT YOUR OWN RISK!"
+            " *  Discord prohibits automating normal user accounts (self-bots) and says accounts found doing so may be terminated. Its Developer Policy also prohibits scraping data through Discord services. This app's personal-account mode automates a normal account to export messages. Request pacing and HTTP/TLS transport do not make this permitted or establish that your account is safe. If you need to avoid account restrictions or termination, do not use this mode."
+        );
+        console.Output.WriteLine(
+            " *  Discord policies: https://support.discord.com/hc/en-us/articles/115002192352-Automated-User-Accounts-Self-Bots"
+        );
+        console.Output.WriteLine(
+            "    https://support-dev.discord.com/hc/en-us/articles/8563934450327-Discord-Developer-Policy"
         );
         console.Output.WriteLine(" 1. Open Discord in your web browser and login");
         console.Output.WriteLine(" 2. Open any server or direct message channel");

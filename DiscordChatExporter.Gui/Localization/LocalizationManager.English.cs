@@ -53,7 +53,7 @@ public partial class LocalizationManager
             // Token instructions (personal account)
             [nameof(TokenPersonalHeader)] = "To get the token for your personal account:",
             [nameof(TokenPersonalTosWarning)] =
-                "*  Automating user accounts is technically against TOS — **use at your own risk**!",
+                "**Account-risk notice:** Discord prohibits automating normal user accounts ('self-bots') and says accounts found doing so may be terminated. Its Developer Policy also prohibits scraping data through Discord services. This app's personal-account mode automates a normal account to export messages. Request pacing and HTTP/TLS transport do not make this permitted or establish that your account is safe. If you need to avoid account restrictions or termination, do not use this mode. Read Discord's [self-bot policy](https://support.discord.com/hc/en-us/articles/115002192352-Automated-User-Accounts-Self-Bots) and [Developer Policy](https://support-dev.discord.com/hc/en-us/articles/8563934450327-Discord-Developer-Policy).",
             [nameof(TokenPersonalInstructions)] = """
                 1. Open Discord in your web browser and login
                 2. Open any server or direct message channel
