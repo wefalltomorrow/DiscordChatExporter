@@ -1,66 +1,39 @@
 # Getting started
 
-Welcome to the getting started page!
-Here you'll learn how to use every **DiscordChatExporter** (DCE for short) feature.
-For other things you can do with DCE, check out the [Guides](Readme.md#guides) section.
+This candidate build converts local chat archive files. It does not sign in to Discord or retrieve new messages.
 
-If you still have unanswered questions after reading this page or if you have encountered a problem, please visit our [FAQ & Troubleshooting](Troubleshooting.md) section.
+## Choose GUI or CLI
 
-The information presented on this page is valid for **all** platforms.
+- The GUI supports batch conversion and local archive browsing/search.
+- The CLI converts one JSON transcript at a time.
 
-## GUI or CLI?
+## Convert with the GUI
 
-![GUI vs CLI](https://i.imgur.com/j9OTxRB.png)
+1. Open the app and select **Conversion**.
+2. Select **Pick JSON files…** for DiscordChatExporter exports, or **Pick Data Package folder…** for an extracted Discord Data Package.
+3. Choose an output folder and one or more target formats.
+4. Select **Convert** and review the results list.
 
-**DCE** has two different versions:
+## Convert with the CLI
 
-- **Graphical User Interface** (**GUI**) - it's the preferred version for newcomers as it is easy to use.
-  You can get it by [downloading](https://github.com/Tyrrrz/DiscordChatExporter/releases/latest) the `DiscordChatExporter.*.zip` file.
-- **Command-line Interface** (**CLI**) - offers greater flexibility and more features for advanced users, such as export scheduling, ID lists, and more specific date ranges.
-  You can get it by [downloading](https://github.com/Tyrrrz/DiscordChatExporter/releases/latest) the `DiscordChatExporter.Cli.*.zip` file.
+~~~powershell
+.\DiscordChatExporter.Cli.exe convert --input .\messages.json --output .\conversation.html --format HtmlDark
+~~~
 
-There are dedicated guides for each version:
+The output formats are **HtmlDark**, **HtmlLight**, **PlainText**, **Csv**, and **Db**. Run the CLI with **guide** or **--help** for its available commands. The CLI accepts no Discord token, channel ID, or live-export command.
 
-- [Using the GUI](Using-the-GUI.md)
-- [Using the CLI](Using-the-CLI.md)
+## Data Package limits
 
-## File formats
+The GUI reads message transcripts from an extracted Data Package. These records contain messages sent by the account that requested the package; they do not include other participants' messages. They cannot be used to recreate a complete conversation transcript.
 
-### HTML
+See Discord's [Data Package guide](https://support.discord.com/hc/en-us/articles/360004957991-Your-Discord-Data-Package) for requesting and extracting the package. Conversion reads local files and does not fetch remote assets. Generated HTML blocks automatic external resource loading; visible links open only when deliberately selected.
 
-![](https://i.imgur.com/S7lBTkV.png)
-The HTML format replicates Discord's interface, making it the most user-friendly option.
-It's the best format for attachment preview and sharing.
-You can open `.html` files with a web browser, such as Google Chrome.
+## Library
 
-> [!WARNING]
-> If a picture is deleted, or if a user changes its avatar, the respective images will no longer be displayed.
-> Export using the "Download assets" (`--media`) option to avoid this.
+The Library lists local exports in folders you add. SQLite (.db) files can be searched locally; no Discord connection is used.
 
-### Plain Text
+## Account-risk milestone
 
-<img src="https://i.imgur.com/PbUyRXD.png" height="400"/>
+This build removes live Discord requests initiated by the application. That does not establish zero account risk or provide full-history retrieval from channels where a bot cannot be added. Existing release binaries are unchanged; verify that a binary was built from the offline-only source before using it.
 
-The Plain Text format formats messages as plain text, and has the smallest size.
-You can open `.txt` files with a text editor, such as Notepad.
-
-### JSON
-
-<img src="https://i.imgur.com/FAeSA4O.png" height="400"/>
-
-The JSON format contains more technical information and is easily parsable.
-You can open `.json` files with a text editor, such as Notepad.
-
-### CSV
-
-![](https://i.imgur.com/VEVUsKs.png)
-![](https://i.imgur.com/1vPmQqQ.png)
-
-The CSV format allows for easy parsing of the chat log. Depending on your needs, the JSON format might be better.
-You can open `.csv` files with a text editor, such as Notepad, or a spreadsheet app, like Microsoft Excel and Google Sheets.
-
-### SQLite
-
-The SQLite format stores the export in a self-contained `.db` database.
-It is useful for large archives, full-text search in the GUI Library, and workflows that need a queryable local database.
-You can open `.db` files with SQLite tools such as DB Browser for SQLite.
+Automatic update checks are disabled in this candidate so it cannot replace itself with an earlier release that still has live Discord access. The latest published release, 2.48.0-wft.4, is unchanged and retains its original behavior.

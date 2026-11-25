@@ -88,26 +88,6 @@ public partial class MainViewModel : ViewModelBase
             Process.StartShellExecute("https://tyrrrz.me/ukraine?source=discordchatexporter");
     }
 
-    private async Task ShowDevelopmentBuildMessageAsync()
-    {
-        if (!Program.IsDevelopmentBuild)
-            return;
-
-        // If debugging, the user is likely a developer
-        if (Debugger.IsAttached)
-            return;
-
-        var dialog = viewModelManager.GetMessageBoxViewModel(
-            localizationManager.UnstableBuildTitle,
-            string.Format(localizationManager.UnstableBuildMessage, Program.Name),
-            localizationManager.SeeReleasesButton,
-            localizationManager.CloseButton
-        );
-
-        if (await dialogManager.ShowDialogAsync(dialog) == true)
-            Process.StartShellExecute(Program.ProjectReleasesUrl);
-    }
-
     private async Task CheckForUpdatesAsync()
     {
         try
@@ -152,7 +132,6 @@ public partial class MainViewModel : ViewModelBase
     {
         // Navigation is wired in the constructor; only the async startup prompts remain here.
         await ShowUkraineSupportMessageAsync();
-        await ShowDevelopmentBuildMessageAsync();
         await CheckForUpdatesAsync();
     }
 

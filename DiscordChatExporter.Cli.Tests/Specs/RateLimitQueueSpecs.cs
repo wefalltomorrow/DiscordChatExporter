@@ -15,7 +15,7 @@ namespace DiscordChatExporter.Cli.Tests.Specs;
 public partial class RateLimitSpecs
 {
     [Fact]
-    public async Task Already_queued_requests_wait_for_advisory_cooldown()
+    public async Task Requests_started_during_advisory_cooldown_wait()
     {
         var firstEntered = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously
@@ -65,11 +65,12 @@ public partial class RateLimitSpecs
         );
         var first = client.TryGetChannelAsync(new Snowflake(1)).AsTask();
         await firstEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        var queued = client.TryGetChannelAsync(new Snowflake(2)).AsTask();
         releaseResponse.TrySetResult();
+        Task<Channel?>? queued = null;
         try
         {
             await delayEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            queued = client.TryGetChannelAsync(new Snowflake(2)).AsTask();
             await Task.WhenAny(queuedSent.Task, Task.Delay(150));
             queuedSent
                 .Task.IsCompleted.Should()
@@ -78,7 +79,10 @@ public partial class RateLimitSpecs
         finally
         {
             releaseDelay.TrySetResult();
-            await Task.WhenAll(first, queued).WaitAsync(TimeSpan.FromSeconds(5));
+            if (queued is not null)
+                await Task.WhenAll(first, queued).WaitAsync(TimeSpan.FromSeconds(5));
+            else
+                await first.WaitAsync(TimeSpan.FromSeconds(5));
         }
     }
 
@@ -92,7 +96,6 @@ public partial class RateLimitSpecs
         using var cancellation = new CancellationTokenSource();
         using var http = new HttpClient(
             new QueueHttpMessageHandler([
-                new(HttpStatusCode.Unauthorized),
                 new(HttpStatusCode.OK),
                 CreateRateLimitResponse(TimeSpan.FromSeconds(120)),
                 new(HttpStatusCode.NotFound),
@@ -125,7 +128,7 @@ public partial class RateLimitSpecs
             .AsTask()
             .WaitAsync(TimeSpan.FromSeconds(5));
         waits.Should().Be(2);
-        client.GetRequestStats().RequestCount.Should().Be(4);
+        client.GetRequestStats().RequestCount.Should().Be(3);
     }
 
     [Fact]
@@ -153,7 +156,7 @@ public partial class RateLimitSpecs
     }
 
     [Fact]
-    public async Task Optional_message_count_does_not_hide_account_restrictions()
+    public async Task Message_count_search_is_not_used_for_bot_tokens()
     {
         using var http = new HttpClient(
             new QueueHttpMessageHandler([
@@ -174,9 +177,7 @@ public partial class RateLimitSpecs
             false,
             null
         );
-        var act = async () => await client.CountMessagesAsync(channel);
-        (await act.Should().ThrowAsync<DiscordChatExporterException>())
-            .Which.IsFatal.Should()
-            .BeTrue();
+        (await client.CountMessagesAsync(channel)).Should().BeNull();
+        client.GetRequestStats().RequestCount.Should().Be(1);
     }
 }

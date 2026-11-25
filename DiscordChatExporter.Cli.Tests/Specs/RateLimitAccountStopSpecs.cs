@@ -1,5 +1,5 @@
 using System;
-using System.IO;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -15,6 +15,23 @@ namespace DiscordChatExporter.Cli.Tests.Specs;
 
 public partial class RateLimitSpecs
 {
+    [Fact]
+    public async Task Public_client_stops_before_sending_any_live_discord_request()
+    {
+        using var client = new DiscordClient("unused-offline-token");
+
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var act = async () => await client.TryGetChannelAsync(new Snowflake(1));
+            await act.Should()
+                .ThrowAsync<DiscordChatExporterException>()
+                .WithMessage("*disabled in this offline-only build*");
+        }
+
+        client.GetRequestStats().RequestCount.Should().Be(0);
+        client.GetDiagnosticSummary().Should().Contain("Live Discord API: disabled");
+    }
+
     [Theory]
     [InlineData(HttpStatusCode.Forbidden, 40002)]
     [InlineData(HttpStatusCode.BadRequest, 40002)]
@@ -34,6 +51,7 @@ public partial class RateLimitSpecs
             new QueueHttpMessageHandler([new(HttpStatusCode.OK), restricted])
         );
         using var client = new DiscordClient("private-token", RateLimitPreference.IgnoreAll, http);
+
         for (ulong id = 1; id <= 3; id++)
         {
             var act = async () => await client.TryGetChannelAsync(new Snowflake(id));
@@ -44,6 +62,7 @@ public partial class RateLimitSpecs
                 .Contain(code.ToString())
                 .And.NotContain("private response text");
         }
+
         restricted.IsDisposed.Should().BeTrue();
         client.GetRequestStats().RequestCount.Should().Be(2);
         client
@@ -54,9 +73,9 @@ public partial class RateLimitSpecs
     }
 
     [Theory]
-    [InlineData("{\"code\":50001}")]
-    [InlineData("{\"code\":50013}")]
-    [InlineData("{\"code\":\"40002\"}")]
+    [InlineData("""{"code":50001}""")]
+    [InlineData("""{"code":50013}""")]
+    [InlineData("""{"code":"40002"}""")]
     [InlineData("not json")]
     public async Task Ordinary_optional_permission_errors_do_not_stop_other_channels(string body)
     {
@@ -68,6 +87,7 @@ public partial class RateLimitSpecs
             ])
         );
         using var client = new DiscordClient("test-token", RateLimitPreference.IgnoreAll, http);
+
         (await client.TryGetChannelAsync(new Snowflake(1))).Should().BeNull();
         (await client.TryGetChannelAsync(new Snowflake(2))).Should().BeNull();
         client.GetRequestStats().RequestCount.Should().Be(3);
@@ -75,12 +95,13 @@ public partial class RateLimitSpecs
     }
 
     [Fact]
-    public async Task Authentication_loss_stops_requests_after_successful_probe()
+    public async Task Authentication_loss_stops_requests_after_successful_bot_probe()
     {
         using var http = new HttpClient(
             new QueueHttpMessageHandler([new(HttpStatusCode.OK), new(HttpStatusCode.Unauthorized)])
         );
         using var client = new DiscordClient("test-token", RateLimitPreference.IgnoreAll, http);
+
         for (ulong id = 1; id <= 2; id++)
         {
             var act = async () => await client.TryGetChannelAsync(new Snowflake(id));
@@ -88,31 +109,58 @@ public partial class RateLimitSpecs
                 .Which.IsFatal.Should()
                 .BeTrue();
         }
+
         client.GetRequestStats().RequestCount.Should().Be(2);
     }
 
     [Fact]
-    public async Task Invalid_token_is_probed_once_in_each_mode_then_stops()
+    public async Task Rejected_credentials_are_probed_only_with_bot_authentication()
     {
-        using var http = new HttpClient(
-            new QueueHttpMessageHandler([
-                new(HttpStatusCode.Unauthorized),
-                new(HttpStatusCode.Unauthorized),
-            ])
+        using var handler = new AuthorizationRecordingHttpMessageHandler(
+            _ => new HttpResponseMessage(HttpStatusCode.Unauthorized)
         );
-        using var client = new DiscordClient("test-token", RateLimitPreference.IgnoreAll, http);
-        for (ulong id = 1; id <= 2; id++)
-        {
-            var act = async () => await client.TryGetChannelAsync(new Snowflake(id));
-            await act.Should().ThrowAsync<DiscordChatExporterException>().WithMessage("*invalid*");
-        }
-        client.GetRequestStats().RequestCount.Should().Be(2);
+        using var http = new HttpClient(handler);
+        using var client = new DiscordClient(
+            "personal-account-token",
+            RateLimitPreference.IgnoreAll,
+            http
+        );
+
+        var act = async () =>
+            await client.TryGetChannelAsync(Snowflake.Parse("123456789012345678"));
+
+        await act.Should()
+            .ThrowAsync<DiscordChatExporterException>()
+            .WithMessage("*bot tokens only*");
+        handler.AuthorizationHeaders.Should().Equal("Bot personal-account-token");
+        client.GetRequestStats().RequestCount.Should().Be(1);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Concurrent_operations_share_one_token_resolution(bool bot)
+    [Fact]
+    public async Task Every_live_request_uses_bot_authentication()
+    {
+        var authorizationHeaders = new List<string>();
+        using var http = new HttpClient(
+            new CallbackHandler(
+                (request, _) =>
+                {
+                    authorizationHeaders.Add(request.Headers.GetValues("Authorization").Single());
+                    var response = request.RequestUri!.AbsolutePath.EndsWith("/users/@me")
+                        ? new HttpResponseMessage(HttpStatusCode.OK)
+                        : new HttpResponseMessage(HttpStatusCode.NotFound);
+                    return Task.FromResult(response);
+                }
+            )
+        );
+        using var client = new DiscordClient("test-token", RateLimitPreference.IgnoreAll, http);
+
+        (await client.TryGetChannelAsync(new Snowflake(1))).Should().BeNull();
+
+        authorizationHeaders.Should().Equal("Bot test-token", "Bot test-token");
+    }
+
+    [Fact]
+    public async Task Concurrent_operations_share_one_bot_token_resolution()
     {
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -126,18 +174,15 @@ public partial class RateLimitSpecs
                         Interlocked.Increment(ref probes);
                         entered.TrySetResult();
                         await release.Task.WaitAsync(ct);
-                        return new HttpResponseMessage(
-                            bot
-                            && request.Headers.GetValues("Authorization").Single() == "test-token"
-                                ? HttpStatusCode.Unauthorized
-                                : HttpStatusCode.OK
-                        );
+                        return new HttpResponseMessage(HttpStatusCode.OK);
                     }
+
                     return new HttpResponseMessage(HttpStatusCode.NotFound);
                 }
             )
         );
         using var client = new DiscordClient("test-token", RateLimitPreference.IgnoreAll, http);
+
         var first = client.TryGetChannelAsync(new Snowflake(1)).AsTask();
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
         var pending = Enumerable
@@ -146,352 +191,20 @@ public partial class RateLimitSpecs
             .ToArray();
         release.TrySetResult();
         await Task.WhenAll(pending.Append(first)).WaitAsync(TimeSpan.FromSeconds(5));
-        probes.Should().Be(bot ? 2 : 1);
+
+        probes.Should().Be(1);
     }
 
     [Fact]
-    public async Task Queued_user_requests_stop_before_sending_after_account_restriction()
-    {
-        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var requests = 0;
-        using var http = new HttpClient(
-            new CallbackHandler(
-                async (request, ct) =>
-                {
-                    Interlocked.Increment(ref requests);
-                    if (request.RequestUri!.AbsolutePath.EndsWith("/users/@me"))
-                        return new HttpResponseMessage(HttpStatusCode.OK);
-                    entered.TrySetResult();
-                    await release.Task.WaitAsync(ct);
-                    return new HttpResponseMessage(HttpStatusCode.Forbidden)
-                    {
-                        Content = new StringContent("{\"code\":40002}"),
-                    };
-                }
-            )
-        );
-        using var client = new DiscordClient("test-token", RateLimitPreference.IgnoreAll, http);
-        var first = client.TryGetChannelAsync(new Snowflake(1)).AsTask();
-        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        var pending = Enumerable
-            .Range(2, 8)
-            .Select(id => client.TryGetChannelAsync(new Snowflake((ulong)id)).AsTask())
-            .ToArray();
-        release.TrySetResult();
-        foreach (var task in pending.Append(first))
-        {
-            var act = async () => await task.WaitAsync(TimeSpan.FromSeconds(5));
-            (await act.Should().ThrowAsync<DiscordChatExporterException>())
-                .Which.IsFatal.Should()
-                .BeTrue();
-        }
-        requests.Should().Be(2);
-    }
-
-    [Fact]
-    public async Task User_rate_limit_stops_queued_requests_without_retry()
-    {
-        var stopDirectory = Path.Combine(
-            Path.GetTempPath(),
-            $"dce-user-token-stop-{Guid.NewGuid():N}"
-        );
-        var stopStore = new UserTokenRequestStopStore(stopDirectory);
-        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var requests = 0;
-        var delays = 0;
-        var rateLimited = new TrackingHttpResponseMessage(HttpStatusCode.TooManyRequests);
-        using var http = new HttpClient(
-            new CallbackHandler(
-                async (request, ct) =>
-                {
-                    Interlocked.Increment(ref requests);
-                    if (request.RequestUri!.AbsolutePath.EndsWith("/users/@me"))
-                        return new HttpResponseMessage(HttpStatusCode.OK);
-                    entered.TrySetResult();
-                    await release.Task.WaitAsync(ct);
-                    return rateLimited;
-                }
-            )
-        );
-        try
-        {
-            using var client = new DiscordClient(
-                "test-token",
-                RateLimitPreference.IgnoreAll,
-                http,
-                (_, _) =>
-                {
-                    Interlocked.Increment(ref delays);
-                    return ValueTask.CompletedTask;
-                },
-                stopStore
-            );
-
-            var first = client.TryGetChannelAsync(new Snowflake(1)).AsTask();
-            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
-            var pending = Enumerable
-                .Range(2, 8)
-                .Select(id => client.TryGetChannelAsync(new Snowflake((ulong)id)).AsTask())
-                .ToArray();
-            release.TrySetResult();
-
-            foreach (var task in pending.Append(first))
-            {
-                var act = async () => await task.WaitAsync(TimeSpan.FromSeconds(5));
-                var failure = await act.Should().ThrowAsync<DiscordChatExporterException>();
-                failure.Which.IsFatal.Should().BeTrue();
-                failure.Which.Message.Should().Contain("429");
-            }
-
-            rateLimited.IsDisposed.Should().BeTrue();
-            requests
-                .Should()
-                .Be(2, "a user-token 429 must not be retried or followed by queued requests");
-            delays.Should().Be(0);
-            client.GetRequestStats().RequestCount.Should().Be(2);
-            client.GetRequestStats().HardRateLimitCount.Should().Be(1);
-        }
-        finally
-        {
-            if (Directory.Exists(stopDirectory))
-                Directory.Delete(stopDirectory, recursive: true);
-        }
-    }
-
-    [Fact]
-    public async Task User_rate_limit_blocks_the_same_token_across_new_clients()
-    {
-        var stopDirectory = Path.Combine(
-            Path.GetTempPath(),
-            $"dce-user-token-stop-{Guid.NewGuid():N}"
-        );
-        var stopStore = new UserTokenRequestStopStore(stopDirectory);
-        var initialRequests = 0;
-        using var initialHttp = new HttpClient(
-            new CallbackHandler(
-                (request, _) =>
-                {
-                    Interlocked.Increment(ref initialRequests);
-                    var response = request.RequestUri!.AbsolutePath.EndsWith("/users/@me")
-                        ? new HttpResponseMessage(HttpStatusCode.OK)
-                        : new HttpResponseMessage(HttpStatusCode.TooManyRequests);
-                    return Task.FromResult(response);
-                }
-            )
-        );
-
-        try
-        {
-            using (
-                var client = new DiscordClient(
-                    "test-token",
-                    RateLimitPreference.IgnoreAll,
-                    initialHttp,
-                    userTokenRequestStopStore: stopStore
-                )
-            )
-            {
-                var initialAct = async () => await client.TryGetChannelAsync(new Snowflake(1));
-                (await initialAct.Should().ThrowAsync<DiscordChatExporterException>())
-                    .Which.Message.Should()
-                    .Contain("429");
-            }
-
-            Directory.GetFiles(stopDirectory).Should().ContainSingle();
-            initialRequests.Should().Be(2);
-
-            var restartedRequests = 0;
-            using var restartedHttp = new HttpClient(
-                new CallbackHandler(
-                    (_, _) =>
-                    {
-                        Interlocked.Increment(ref restartedRequests);
-                        return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
-                    }
-                )
-            );
-            using var restartedClient = new DiscordClient(
-                "test-token",
-                RateLimitPreference.IgnoreAll,
-                restartedHttp,
-                userTokenRequestStopStore: new UserTokenRequestStopStore(stopDirectory)
-            );
-
-            var restartedAct = async () =>
-                await restartedClient.TryGetChannelAsync(new Snowflake(1));
-            (await restartedAct.Should().ThrowAsync<DiscordChatExporterException>())
-                .Which.Message.Should()
-                .Contain("previous HTTP 429");
-            restartedRequests.Should().Be(0);
-
-            var differentTokenRequests = 0;
-            using var differentTokenHttp = new HttpClient(
-                new CallbackHandler(
-                    (request, _) =>
-                    {
-                        Interlocked.Increment(ref differentTokenRequests);
-                        var response = new HttpResponseMessage(HttpStatusCode.OK)
-                        {
-                            Content = new StringContent("[]"),
-                        };
-                        return Task.FromResult(response);
-                    }
-                )
-            );
-            using var differentTokenClient = new DiscordClient(
-                "different-token",
-                RateLimitPreference.IgnoreAll,
-                differentTokenHttp,
-                userTokenRequestStopStore: stopStore
-            );
-
-            var guildCount = 0;
-            await foreach (var _ in differentTokenClient.GetUserGuildsAsync())
-                guildCount++;
-            guildCount.Should().Be(1, "the client yields the direct-messages pseudo-guild");
-            differentTokenRequests.Should().Be(2);
-        }
-        finally
-        {
-            if (Directory.Exists(stopDirectory))
-                Directory.Delete(stopDirectory, recursive: true);
-        }
-    }
-
-    [Fact]
-    public async Task User_probe_rate_limit_does_not_persist_stop_or_block_bot_fallback()
-    {
-        var stopDirectory = Path.Combine(
-            Path.GetTempPath(),
-            $"dce-user-token-stop-{Guid.NewGuid():N}"
-        );
-        var stopStore = new UserTokenRequestStopStore(stopDirectory);
-        using var probeHttp = new HttpClient(
-            new CallbackHandler(
-                (_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.TooManyRequests))
-            )
-        );
-
-        try
-        {
-            using (
-                var probeClient = new DiscordClient(
-                    "test-token",
-                    RateLimitPreference.IgnoreAll,
-                    probeHttp,
-                    userTokenRequestStopStore: stopStore
-                )
-            )
-            {
-                var probeAct = async () => await probeClient.TryGetChannelAsync(new Snowflake(1));
-                (await probeAct.Should().ThrowAsync<DiscordChatExporterException>())
-                    .Which.Message.Should()
-                    .Contain("token as a user token");
-            }
-
-            Directory.Exists(stopDirectory).Should().BeFalse();
-
-            var fallbackRequests = 0;
-            using var fallbackHttp = new HttpClient(
-                new CallbackHandler(
-                    (request, _) =>
-                    {
-                        Interlocked.Increment(ref fallbackRequests);
-                        if (request.RequestUri!.AbsolutePath.EndsWith("/users/@me"))
-                        {
-                            var isBot = request
-                                .Headers.GetValues("Authorization")
-                                .Single()
-                                .StartsWith("Bot ", StringComparison.Ordinal);
-                            return Task.FromResult(
-                                new HttpResponseMessage(
-                                    isBot ? HttpStatusCode.OK : HttpStatusCode.Unauthorized
-                                )
-                            );
-                        }
-
-                        return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
-                    }
-                )
-            );
-            using var fallbackClient = new DiscordClient(
-                "test-token",
-                RateLimitPreference.IgnoreAll,
-                fallbackHttp,
-                userTokenRequestStopStore: new UserTokenRequestStopStore(stopDirectory)
-            );
-
-            (await fallbackClient.TryGetChannelAsync(new Snowflake(1))).Should().BeNull();
-            fallbackRequests
-                .Should()
-                .Be(3, "the fresh client should probe user, probe bot, then fetch the channel");
-        }
-        finally
-        {
-            if (Directory.Exists(stopDirectory))
-                Directory.Delete(stopDirectory, recursive: true);
-        }
-    }
-
-    [Fact]
-    public async Task User_rate_limit_still_stops_when_persistent_marker_cannot_be_written()
-    {
-        var stopPath = Path.Combine(Path.GetTempPath(), $"dce-user-token-stop-{Guid.NewGuid():N}");
-        File.WriteAllText(stopPath, "not a directory");
-        var requests = 0;
-        using var http = new HttpClient(
-            new CallbackHandler(
-                (request, _) =>
-                {
-                    Interlocked.Increment(ref requests);
-                    return Task.FromResult(
-                        new HttpResponseMessage(
-                            request.RequestUri!.AbsolutePath.EndsWith("/users/@me")
-                                ? HttpStatusCode.OK
-                                : HttpStatusCode.TooManyRequests
-                        )
-                    );
-                }
-            )
-        );
-
-        try
-        {
-            using var client = new DiscordClient(
-                "test-token",
-                RateLimitPreference.IgnoreAll,
-                http,
-                userTokenRequestStopStore: new UserTokenRequestStopStore(stopPath)
-            );
-
-            for (ulong id = 1; id <= 2; id++)
-            {
-                var act = async () => await client.TryGetChannelAsync(new Snowflake(id));
-                (await act.Should().ThrowAsync<DiscordChatExporterException>())
-                    .Which.Message.Should()
-                    .Contain("local stop could not be saved");
-            }
-
-            requests.Should().Be(2, "a failed marker write must still latch the in-process stop");
-        }
-        finally
-        {
-            if (File.Exists(stopPath))
-                File.Delete(stopPath);
-        }
-    }
-
-    [Fact]
-    public async Task Verification_required_during_probe_stops_without_bot_fallback()
+    public async Task Verification_required_during_bot_probe_stops_without_another_request()
     {
         using var http = new HttpClient(
             new QueueHttpMessageHandler([
-                new(HttpStatusCode.Forbidden) { Content = new StringContent("{\"code\":40002}") },
+                new(HttpStatusCode.Forbidden) { Content = new StringContent("""{"code":40002}""") },
             ])
         );
         using var client = new DiscordClient("test-token", RateLimitPreference.IgnoreAll, http);
+
         for (ulong id = 1; id <= 2; id++)
         {
             var act = async () => await client.TryGetChannelAsync(new Snowflake(id));
@@ -499,6 +212,7 @@ public partial class RateLimitSpecs
                 .Which.IsFatal.Should()
                 .BeTrue();
         }
+
         client.GetRequestStats().RequestCount.Should().Be(1);
     }
 

@@ -45,7 +45,7 @@ public sealed partial class ConversionViewModel(
         promptDirectoryPathAsync
         ?? (defaultDirPath => dialogManager.PromptDirectoryPathAsync(defaultDirPath));
     private readonly Func<string, CancellationToken, ValueTask<ParsedExport>> _parseAsync =
-        parseAsync ?? JsonExportReader.ParseAsync;
+        parseAsync ?? OfflineExportReader.ParseAsync;
     private readonly Func<
         ParsedExport,
         string,
@@ -130,6 +130,7 @@ public sealed partial class ConversionViewModel(
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ConvertCommand))]
     [NotifyCanExecuteChangedFor(nameof(PickFilesCommand))]
+    [NotifyCanExecuteChangedFor(nameof(PickDataPackageFolderCommand))]
     [NotifyCanExecuteChangedFor(nameof(PickOutputFolderCommand))]
     [NotifyCanExecuteChangedFor(nameof(NavigateBackCommand))]
     [NotifyPropertyChangedFor(nameof(CanEditConversionState))]
@@ -158,6 +159,83 @@ public sealed partial class ConversionViewModel(
             SourceFilePaths.Add(path);
 
         ConvertCommand.NotifyCanExecuteChanged();
+    }
+
+    [RelayCommand(CanExecute = nameof(CanEditConversionState))]
+    private async Task PickDataPackageFolderAsync()
+    {
+        if (IsBusy)
+            return;
+
+        var selectedDirectory = await _promptDirectoryPathAsync("");
+        if (IsBusy || selectedDirectory is null)
+            return;
+
+        Results.Clear();
+        var messagesDirectory = FindDataPackageMessagesDirectory(selectedDirectory);
+        if (messagesDirectory is null)
+        {
+            Results.Add(
+                new ConversionResultRow(
+                    selectedDirectory,
+                    "",
+                    ExportFormat.Json,
+                    false,
+                    false,
+                    LocalizationManager.ConversionNoDataPackageTranscriptsMessage
+                )
+            );
+            return;
+        }
+
+        var transcriptPaths = Directory
+            .EnumerateFiles(messagesDirectory, "messages.json", SearchOption.AllDirectories)
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        foreach (
+            var path in transcriptPaths.Where(p =>
+                !FileSystemPathComparer.ContainsPath(SourceFilePaths, p, _pathComparerForPath)
+            )
+        )
+            SourceFilePaths.Add(path);
+
+        if (transcriptPaths.Length == 0)
+        {
+            Results.Add(
+                new ConversionResultRow(
+                    selectedDirectory,
+                    "",
+                    ExportFormat.Json,
+                    false,
+                    false,
+                    LocalizationManager.ConversionNoDataPackageTranscriptsMessage
+                )
+            );
+        }
+
+        ConvertCommand.NotifyCanExecuteChanged();
+    }
+
+    private static string? FindDataPackageMessagesDirectory(string selectedDirectory)
+    {
+        if (
+            Path.GetFileName(
+                    selectedDirectory.TrimEnd(
+                        Path.DirectorySeparatorChar,
+                        Path.AltDirectorySeparatorChar
+                    )
+                )
+                .Equals("messages", StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            return selectedDirectory;
+        }
+
+        return Directory
+            .EnumerateDirectories(selectedDirectory)
+            .FirstOrDefault(path =>
+                Path.GetFileName(path).Equals("messages", StringComparison.OrdinalIgnoreCase)
+            );
     }
 
     [RelayCommand(CanExecute = nameof(CanEditConversionState))]
@@ -427,6 +505,15 @@ public sealed partial class ConversionViewModel(
     )
     {
         var fileNameWithoutExtension = Path.GetFileNameWithoutExtension(sourcePath);
+        if (
+            fileNameWithoutExtension.Equals("messages", StringComparison.OrdinalIgnoreCase)
+            || fileNameWithoutExtension.Equals("transcript", StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            var channelFolderName = Path.GetFileName(Path.GetDirectoryName(sourcePath));
+            if (!string.IsNullOrWhiteSpace(channelFolderName))
+                fileNameWithoutExtension = channelFolderName;
+        }
         var formatSuffix = disambiguateHtml
             ? format switch
             {

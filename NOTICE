@@ -7,10 +7,6 @@ It also incorporates and adapts work from:
 - arandomhooman/DiscordChatExporter — resume/continuation, SQLite exports,
   searchable library, offline conversion, resilient batch exporting,
   progress/ETA, and related reliability/hardening work.
-- nulldg/DiscordChatExporterPlus — HttpCloak browser/TLS transport work for
-  user-token requests.
-- Tyrrrz/DiscordChatExporter pull request #1582 (lunavyqo, building on earlier
-  community work) — official-web-style X-Super-Properties/client headers.
 
 Additional integration, compatibility, retry, and hardening changes are
 maintained in wefalltomorrow/DiscordChatExporter.

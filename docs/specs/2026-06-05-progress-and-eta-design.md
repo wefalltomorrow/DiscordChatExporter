@@ -1,5 +1,7 @@
 # Honest Progress Bar + Time-Remaining — Design
 
+> **Historical / superseded guidance (June 5, 2026):** This design describes a live-export feature that is not part of the current offline-only candidate. Its authentication and endpoint assumptions are obsolete; do not treat them as instructions for the current build.
+
 **Status:** Approved (2026-06-05). Feature ③ of the batch (① SQLite resume, ② conversion). Independent
 of ① and ②; touches the Discord API layer + the export progress pipeline + the GUI. Distilled from a
 4-agent brainstorm (UX, estimation algorithm, signal source, total-count feasibility).

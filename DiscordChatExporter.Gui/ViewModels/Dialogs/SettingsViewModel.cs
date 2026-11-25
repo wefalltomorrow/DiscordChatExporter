@@ -56,19 +56,13 @@ public class SettingsViewModel : DialogViewModelBase
         set => _settingsService.IsAutoUpdateEnabled = value;
     }
 
-    public bool IsTokenPersisted
-    {
-        get => _settingsService.IsTokenPersisted;
-        set => _settingsService.IsTokenPersisted = value;
-    }
-
     public IReadOnlyList<RateLimitPreference> AvailableRateLimitPreferences { get; } =
-        Enum.GetValues<RateLimitPreference>();
+    [RateLimitPreference.RespectForBotTokens];
 
     public RateLimitPreference RateLimitPreference
     {
-        get => _settingsService.RateLimitPreference;
-        set => _settingsService.RateLimitPreference = value;
+        get => RateLimitPreference.RespectForBotTokens;
+        set => _settingsService.RateLimitPreference = RateLimitPreference.RespectForBotTokens;
     }
 
     public IReadOnlyList<ThreadInclusionMode> AvailableThreadInclusionModes { get; } =

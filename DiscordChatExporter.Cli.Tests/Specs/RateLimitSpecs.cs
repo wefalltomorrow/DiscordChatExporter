@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using DiscordChatExporter.Cli.Commands.Base;
 using DiscordChatExporter.Core.Discord;
 using DiscordChatExporter.Core.Discord.Data;
 using DiscordChatExporter.Core.Exceptions;
@@ -16,16 +18,22 @@ namespace DiscordChatExporter.Cli.Tests.Specs;
 
 public partial class RateLimitSpecs
 {
-    [Fact]
-    public void Archival_request_concurrency_is_conservatively_bounded()
+    [Theory]
+    [InlineData(true, RateLimitPreference.RespectAll)]
+    [InlineData(false, RateLimitPreference.RespectAll)]
+    public void Cli_rate_limit_option_cannot_disable_rate_limits(
+        bool shouldRespectRateLimits,
+        RateLimitPreference expectedPreference
+    )
     {
-        DiscordClient.UserRequestConcurrencyLimit.Should().Be(1);
-        DiscordClient.BotRequestConcurrencyLimit.Should().Be(16);
-        DiscordClient.UserRequestStartInterval.Should().Be(TimeSpan.FromMilliseconds(750));
-        DiscordClient.InvalidRequestCircuitBreakerThreshold.Should().Be(25);
-        DiscordClient
-            .UserRequestConcurrencyLimit.Should()
-            .BeLessThan(DiscordClient.BotRequestConcurrencyLimit);
+        var command = new RateLimitTestCommand
+        {
+            Token = "test-token",
+            ShouldRespectRateLimits = shouldRespectRateLimits,
+        };
+
+        using var client = command.CreateDiscordClientForTest();
+        client.RateLimitPreference.Should().Be(expectedPreference);
     }
 
     [Theory]
@@ -46,10 +54,62 @@ public partial class RateLimitSpecs
     }
 
     [Fact]
-    public void User_token_advisory_limits_cannot_be_disabled()
+    public void Legacy_rate_limit_preferences_always_respect_discord_limits()
     {
-        RateLimitPreference.IgnoreAll.IsRespectedFor(TokenKind.User).Should().BeTrue();
-        RateLimitPreference.IgnoreAll.IsRespectedFor(TokenKind.Bot).Should().BeFalse();
+        RateLimitPreference.IgnoreAll.IsRespectedFor(TokenKind.Bot).Should().BeTrue();
+        RateLimitPreference.RespectForBotTokens.IsRespectedFor(TokenKind.Bot).Should().BeTrue();
+        RateLimitPreference.IgnoreAll.GetDisplayName().Should().Contain("Discord");
+        RateLimitPreference.RespectForBotTokens.GetDisplayName().Should().Contain("Discord");
+    }
+
+    [Fact]
+    public async Task Legacy_ignore_preference_cannot_bypass_an_advertised_rate_limit()
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.NotFound);
+        response.Headers.Add("X-RateLimit-Remaining", "0");
+        response.Headers.Add("X-RateLimit-Reset-After", "0");
+
+        using var http = new HttpClient(
+            new QueueHttpMessageHandler([new(HttpStatusCode.OK), response])
+        );
+        var observedDelays = new List<TimeSpan>();
+        using var discord = new DiscordClient(
+            "test-token",
+            RateLimitPreference.IgnoreAll,
+            http,
+            (delay, _) =>
+            {
+                observedDelays.Add(delay);
+                return ValueTask.CompletedTask;
+            }
+        );
+
+        (await discord.TryGetChannelAsync(Snowflake.Parse("123456789012345678"))).Should().BeNull();
+
+        observedDelays.Should().ContainSingle().Which.Should().Be(TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
+    public async Task Personal_account_credentials_are_never_sent_as_user_authentication()
+    {
+        using var handler = new AuthorizationRecordingHttpMessageHandler(
+            _ => new HttpResponseMessage(HttpStatusCode.Unauthorized)
+        );
+        using var http = new HttpClient(handler);
+        using var discord = new DiscordClient(
+            "personal-account-token",
+            RateLimitPreference.IgnoreAll,
+            http
+        );
+
+        var act = async () =>
+            await discord.TryGetChannelAsync(Snowflake.Parse("123456789012345678"));
+
+        await act.Should()
+            .ThrowAsync<DiscordChatExporterException>()
+            .WithMessage("*bot tokens only*");
+        handler.AuthorizationHeaders.Should().Equal("Bot personal-account-token");
+        discord.GetRequestStats().RequestCount.Should().Be(1);
     }
 
     [Fact]
@@ -58,7 +118,6 @@ public partial class RateLimitSpecs
         var observedDelays = new List<TimeSpan>();
         using var httpClient = new HttpClient(
             new QueueHttpMessageHandler([
-                new HttpResponseMessage(HttpStatusCode.Unauthorized),
                 new HttpResponseMessage(HttpStatusCode.OK),
                 new HttpResponseMessage(HttpStatusCode.TooManyRequests)
                 {
@@ -105,11 +164,10 @@ public partial class RateLimitSpecs
     }
 
     [Fact]
-    public async Task Emits_rate_limit_events_for_retry_after_429_when_advisory_limits_are_disabled()
+    public async Task Emits_rate_limit_events_for_retry_after_429_with_legacy_ignore_preference()
     {
         using var httpClient = new HttpClient(
             new QueueHttpMessageHandler([
-                new HttpResponseMessage(HttpStatusCode.Unauthorized),
                 new HttpResponseMessage(HttpStatusCode.OK),
                 CreateRateLimitResponse(TimeSpan.Zero),
                 new HttpResponseMessage(HttpStatusCode.OK)
@@ -161,7 +219,6 @@ public partial class RateLimitSpecs
 
         using var httpClient = new HttpClient(
             new QueueHttpMessageHandler([
-                new HttpResponseMessage(HttpStatusCode.Unauthorized),
                 new HttpResponseMessage(HttpStatusCode.OK),
                 rateLimitResponse,
                 new HttpResponseMessage(HttpStatusCode.OK)
@@ -217,7 +274,6 @@ public partial class RateLimitSpecs
         );
         using var httpClient = new HttpClient(
             new QueueHttpMessageHandler([
-                new HttpResponseMessage(HttpStatusCode.Unauthorized),
                 new HttpResponseMessage(HttpStatusCode.OK),
                 retryResponse,
                 new HttpResponseMessage(HttpStatusCode.OK)
@@ -509,16 +565,10 @@ public partial class RateLimitSpecs
         discord.GetRequestStats().RequestCount.Should().Be(2);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Diagnostics_report_observed_transport_and_status_without_request_data(
-        bool bot
-    )
+    [Fact]
+    public async Task Diagnostics_report_bot_transport_and_status_without_request_data()
     {
         var responses = new List<HttpResponseMessage>();
-        if (bot)
-            responses.Add(new(HttpStatusCode.Unauthorized));
         responses.Add(new(HttpStatusCode.OK));
         responses.Add(new(HttpStatusCode.Forbidden));
         using var http = new HttpClient(new QueueHttpMessageHandler(responses));
@@ -533,14 +583,13 @@ public partial class RateLimitSpecs
         var summary = discord.GetDiagnosticSummary();
         summary
             .Should()
-            .Contain($"Token kind: {(bot ? "Bot" : "User")}")
+            .Contain("Token kind: Bot")
             .And.Contain("Last attempted request transport: HttpClient")
             .And.Contain("Last HTTP response: 403")
             .And.NotContain("private-token")
             .And.NotContain("123456789012345678");
-        if (bot)
-            summary.Should().Contain("Selected transport: HttpClient (bot token)");
-        discord.GetRequestStats().RequestCount.Should().Be(bot ? 3 : 2);
+        summary.Should().Contain("Live Discord API: disabled");
+        discord.GetRequestStats().RequestCount.Should().Be(2);
     }
 
     private static HttpResponseMessage CreateRateLimitResponse(TimeSpan retryAfter)
@@ -565,6 +614,27 @@ public partial class RateLimitSpecs
 
             return Task.FromResult(response);
         }
+    }
+
+    private sealed class AuthorizationRecordingHttpMessageHandler(
+        Func<HttpRequestMessage, HttpResponseMessage> createResponse
+    ) : HttpMessageHandler
+    {
+        public List<string> AuthorizationHeaders { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken
+        )
+        {
+            AuthorizationHeaders.Add(request.Headers.GetValues("Authorization").Single());
+            return Task.FromResult(createResponse(request));
+        }
+    }
+
+    private sealed class RateLimitTestCommand : DiscordCommandBase
+    {
+        public DiscordClient CreateDiscordClientForTest() => CreateDiscordClient();
     }
 
     private sealed class TrackingHttpResponseMessage(HttpStatusCode statusCode)

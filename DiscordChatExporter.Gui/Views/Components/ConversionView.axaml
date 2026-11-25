@@ -52,6 +52,10 @@
             Content="{Binding LocalizationManager.ConversionPickFilesButtonText}"
           />
           <Button
+            Command="{Binding PickDataPackageFolderCommand}"
+            Content="{Binding LocalizationManager.ConversionPickDataPackageButtonText}"
+          />
+          <Button
             Command="{Binding PickOutputFolderCommand}"
             Content="{Binding LocalizationManager.ConversionPickOutputFolderButtonText}"
           />

@@ -80,7 +80,6 @@ public partial class RateLimitSpecs
     {
         using var http = new HttpClient(
             new QueueHttpMessageHandler([
-                new(HttpStatusCode.Unauthorized),
                 new(HttpStatusCode.OK),
                 response,
                 new(HttpStatusCode.NotFound),
@@ -106,6 +105,6 @@ public partial class RateLimitSpecs
         }
         response.IsDisposed.Should().BeTrue();
         waits.Should().Be(0);
-        client.GetRequestStats().RequestCount.Should().Be(3);
+        client.GetRequestStats().RequestCount.Should().Be(2);
     }
 }

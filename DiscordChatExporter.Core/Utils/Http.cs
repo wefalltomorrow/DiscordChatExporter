@@ -9,7 +9,6 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using DiscordChatExporter.Core.Exceptions;
-using HttpCloak;
 using Polly;
 using Polly.Retry;
 using PowerKit.Extensions;
@@ -37,7 +36,20 @@ public static class Http
         return TimeSpan.FromSeconds(value);
     }
 
-    public static HttpClient Client { get; } = new();
+    // Core's shared HTTP client is used for Discord API and CDN traffic. This fork keeps those
+    // routes offline; request-handling tests inject their own in-memory HttpClient.
+    public static HttpClient Client { get; } = new(new DisabledNetworkHandler());
+
+    private sealed class DisabledNetworkHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken
+        ) =>
+            Task.FromException<HttpResponseMessage>(
+                new HttpRequestException("Discord network access is disabled in this build.")
+            );
+    }
 
     internal static ResiliencePropertyKey<
         Func<TimeSpan, CancellationToken, ValueTask>
@@ -57,11 +69,7 @@ public static class Http
         exception
             .GetSelfAndDescendants()
             .Any(ex =>
-                ex
-                    is TimeoutException
-                        or SocketException
-                        or AuthenticationException
-                        or HttpCloakException
+                ex is TimeoutException or SocketException or AuthenticationException
                 || ex is HttpRequestException hrex
                     && IsRetryableStatusCode(hrex.StatusCode ?? HttpStatusCode.OK)
             );

@@ -12,22 +12,6 @@ public partial class LocalizationManager
             [nameof(SettingsTooltip)] = "Ajustes",
             [nameof(LastMessageSentTooltip)] = "Último mensaje enviado:",
             [nameof(TokenPlaceholderText)] = "Token",
-            // Token instructions (personal account)
-            [nameof(TokenPersonalHeader)] = "Cómo obtener el token para tu cuenta personal:",
-            [nameof(TokenPersonalTosWarning)] =
-                "**Riesgo para la cuenta:** Discord prohíbe automatizar cuentas de usuario normales («self-bots») y advierte que las cuentas detectadas pueden ser canceladas. Su Política para Desarrolladores también prohíbe extraer datos a través de los servicios de Discord. Este modo automatiza una cuenta normal para exportar mensajes. La frecuencia de las solicitudes y el transporte HTTP/TLS no hacen que este uso esté permitido ni garantizan la seguridad de la cuenta. Si necesitas evitar restricciones o la cancelación de tu cuenta, no uses este modo. Lee la [política de Discord sobre self-bots](https://support.discord.com/hc/en-us/articles/115002192352-Automated-User-Accounts-Self-Bots) y la [Política para Desarrolladores](https://support-dev.discord.com/hc/en-us/articles/8563934450327-Discord-Developer-Policy).",
-            [nameof(TokenPersonalInstructions)] = """
-                1. Abre Discord en tu navegador web e inicia sesión
-                2. Abre cualquier servidor o canal de mensaje directo
-                3. Presiona **Ctrl+Shift+I** para mostrar las herramientas de desarrollo
-                4. Navega a la pestaña **Network**
-                5. Presiona **Ctrl+R** para recargar
-                6. Cambia entre canales para activar solicitudes de red
-                7. Busca una solicitud que comience con **messages**
-                8. Selecciona la pestaña **Headers** a la derecha
-                9. Desplázate hasta la sección **Request Headers**
-                10. Copia el valor del encabezado **authorization**
-                """,
             // Token instructions (bot)
             [nameof(TokenBotHeader)] = "Cómo obtener el token para tu bot:",
             [nameof(TokenBotInstructions)] = """
@@ -56,9 +40,9 @@ public partial class LocalizationManager
                 Guardar el último token utilizado en un archivo para conservarlo entre sesiones.
                 **Advertencia**: aunque el token se almacena con cifrado, aún puede ser recuperado por un atacante con acceso a tu sistema.
                 """,
-            [nameof(RateLimitPreferenceLabel)] = "Preferencia de límite de velocidad",
+            [nameof(RateLimitPreferenceLabel)] = "Límites de velocidad",
             [nameof(RateLimitPreferenceTooltip)] =
-                "Si se deben respetar los límites de velocidad recomendados. Si está desactivado, solo se respetarán los límites estrictos (respuestas 429).",
+                "Los límites de velocidad de Discord siempre se respetan. Esta opción no puede desactivar las esperas.",
             [nameof(ShowThreadsLabel)] = "Mostrar hilos",
             [nameof(ShowThreadsTooltip)] = "Qué tipos de hilos mostrar en la lista de canales",
             [nameof(LocaleLabel)] = "Configuración regional",

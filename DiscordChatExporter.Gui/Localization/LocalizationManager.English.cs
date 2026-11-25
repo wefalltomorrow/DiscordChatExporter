@@ -13,6 +13,8 @@ public partial class LocalizationManager
             [nameof(ExportedThroughFormat)] = "exported through {0}",
             [nameof(ChannelProgressFormat)] = "Channel {0} of {1}",
             [nameof(RateLimitPauseFormat)] = "Rate limited - resuming in {0}s",
+            [nameof(DiscordOfflineModeNotice)] =
+                "Discord access is disabled in this build. Use Conversion to process files already on your device.",
             [nameof(ExportCatalogWriteFailedMessage)] =
                 "Export finished, but the catalog (manifest.json) could not be updated.",
             [nameof(ExportSummaryMessage)] =
@@ -50,22 +52,6 @@ public partial class LocalizationManager
             [nameof(ConversionTooltip)] = "Convert JSON exports",
             [nameof(LastMessageSentTooltip)] = "Last message sent:",
             [nameof(TokenPlaceholderText)] = "Token",
-            // Token instructions (personal account)
-            [nameof(TokenPersonalHeader)] = "To get the token for your personal account:",
-            [nameof(TokenPersonalTosWarning)] =
-                "**Account-risk notice:** Discord prohibits automating normal user accounts ('self-bots') and says accounts found doing so may be terminated. Its Developer Policy also prohibits scraping data through Discord services. This app's personal-account mode automates a normal account to export messages. Request pacing and HTTP/TLS transport do not make this permitted or establish that your account is safe. If you need to avoid account restrictions or termination, do not use this mode. Read Discord's [self-bot policy](https://support.discord.com/hc/en-us/articles/115002192352-Automated-User-Accounts-Self-Bots) and [Developer Policy](https://support-dev.discord.com/hc/en-us/articles/8563934450327-Discord-Developer-Policy).",
-            [nameof(TokenPersonalInstructions)] = """
-                1. Open Discord in your web browser and login
-                2. Open any server or direct message channel
-                3. Press **Ctrl+Shift+I** to show developer tools
-                4. Navigate to the **Network** tab
-                5. Press **Ctrl+R** to reload
-                6. Switch between random channels to trigger network requests
-                7. Search for a request that starts with **messages**
-                8. Select the **Headers** tab on the right
-                9. Scroll down to the **Request Headers** section
-                10. Copy the value of the **authorization** header
-                """,
             // Token instructions (bot)
             [nameof(TokenBotHeader)] = "To get the token for your bot:",
             [nameof(TokenBotInstructions)] = """
@@ -79,6 +65,8 @@ public partial class LocalizationManager
                 *  Integrations using the previous token will stop working until updated
                 *  Your bot needs to have the **Message Content Intent** enabled to read messages
                 """,
+            [nameof(TokenBotPolicyWarning)] =
+                "Discord's Terms of Service and Developer Policy restrict scraping data through Discord services. Bot authentication and rate-limit handling do not by themselves establish that chat exports are permitted or guarantee account safety.",
             [nameof(TokenHelpText)] =
                 "If you have questions or issues, please refer to the [documentation](https://github.com/Tyrrrz/DiscordChatExporter/tree/prime/.docs)",
             // Library
@@ -93,8 +81,11 @@ public partial class LocalizationManager
             [nameof(ConversionTitle)] = "Conversion",
             [nameof(ConversionBackButtonText)] = "Back",
             [nameof(ConversionDescription)] =
-                "Convert JSON exports to HTML, CSV, TXT, or SQLite without connecting to Discord.",
+                "Convert DiscordChatExporter JSON exports or extracted Discord Data Package message transcripts to HTML, CSV, TXT, or SQLite without connecting to Discord. Data Package transcripts contain only messages sent by the account that requested the package.",
             [nameof(ConversionPickFilesButtonText)] = "Pick JSON files…",
+            [nameof(ConversionPickDataPackageButtonText)] = "Pick Data Package folder…",
+            [nameof(ConversionNoDataPackageTranscriptsMessage)] =
+                "No messages.json transcripts were found in the selected folder.",
             [nameof(ConversionPickOutputFolderButtonText)] = "Pick output folder…",
             [nameof(ConversionConvertButtonText)] = "CONVERT",
             [nameof(ConversionSourcesHeader)] = "Source JSON files",
@@ -115,9 +106,9 @@ public partial class LocalizationManager
                 Save the last used token to a file so that it can be persisted between sessions.
                 **Warning**: although the token is stored with encryption, it may still be recovered by an attacker who has access to your system.
                 """,
-            [nameof(RateLimitPreferenceLabel)] = "Rate limit preference",
+            [nameof(RateLimitPreferenceLabel)] = "Rate limits",
             [nameof(RateLimitPreferenceTooltip)] =
-                "Whether to respect advisory rate limits. If disabled, only hard rate limits (i.e., 429 responses) will be respected.",
+                "Discord rate limits are always respected. This setting cannot disable rate-limit waits.",
             [nameof(ShowThreadsLabel)] = "Show threads",
             [nameof(ShowThreadsTooltip)] = "Which types of threads to show in the channel list",
             [nameof(LocaleLabel)] = "Locale",

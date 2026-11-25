@@ -575,4 +575,31 @@ public sealed class ConversionViewModelTests : IDisposable
 
         viewModel.SourceFilePaths.Should().HaveCount(2);
     }
+
+    [Fact]
+    public async Task Pick_data_package_folder_adds_all_channel_transcripts()
+    {
+        var messagesDirectory = Directory.CreateDirectory(
+            Path.Combine(_dir, "Package", "Messages")
+        );
+        var firstTranscript = Path.Combine(messagesDirectory.FullName, "c100", "messages.json");
+        var secondTranscript = Path.Combine(messagesDirectory.FullName, "c200", "messages.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(firstTranscript)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(secondTranscript)!);
+        await File.WriteAllTextAsync(firstTranscript, "[]", TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(secondTranscript, "[]", TestContext.Current.CancellationToken);
+
+        var viewModel = new ConversionViewModel(
+            new DialogManager(),
+            new LocalizationManager(new SettingsService()),
+            promptDirectoryPathAsync: _ =>
+                Task.FromResult<string?>(Path.GetDirectoryName(messagesDirectory.FullName)!)
+        );
+
+        await viewModel.PickDataPackageFolderCommand.ExecuteAsync(null);
+
+        viewModel
+            .SourceFilePaths.Should()
+            .BeEquivalentTo(new[] { firstTranscript, secondTranscript });
+    }
 }

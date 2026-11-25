@@ -19,11 +19,11 @@ public class JsonRetrySpecs
     public async Task Retries_the_exact_json_request_after_a_truncated_response()
     {
         var handler = new QueueHttpMessageHandler([
-            // Token-kind probe.
+            // Bot-authentication probe.
             new HttpResponseMessage(HttpStatusCode.OK),
-            // First user request: syntactically truncated JSON.
+            // First API request: syntactically truncated JSON.
             JsonResponse("""{"id":"123456789012345678","username":"test"""),
-            // Retry of the same user request: valid response.
+            // Retry of the same API request: valid response.
             JsonResponse(
                 """
                 {
@@ -53,10 +53,10 @@ public class JsonRetrySpecs
     }
 
     [Fact]
-    public async Task Managed_fallback_still_sends_official_web_user_headers()
+    public async Task Live_requests_use_bot_auth_without_browser_fingerprint_headers()
     {
         var handler = new QueueHttpMessageHandler([
-            // Token-kind probe.
+            // Bot-authentication probe.
             new HttpResponseMessage(HttpStatusCode.OK),
             JsonResponse(
                 """
@@ -81,9 +81,10 @@ public class JsonRetrySpecs
 
         _ = await discord.TryGetUserAsync(Snowflake.Parse("123456789012345678"));
 
-        handler.LastUserAgent.Should().Be(DiscordUserClientProfile.BrowserUserAgent);
-        handler.LastSuperProperties.Should().NotBeNullOrWhiteSpace();
-        handler.LastLocale.Should().Be("en-US");
+        handler.LastAuthorization.Should().Be("Bot test-token");
+        handler.LastUserAgent.Should().BeNull();
+        handler.LastSuperProperties.Should().BeNull();
+        handler.LastLocale.Should().BeNull();
     }
 
     [Fact]
@@ -91,7 +92,7 @@ public class JsonRetrySpecs
     {
         var responses = new List<HttpResponseMessage>
         {
-            // Token-kind probe.
+            // Bot-authentication probe.
             new(HttpStatusCode.OK),
         };
 
@@ -130,6 +131,8 @@ public class JsonRetrySpecs
 
         public int RequestCount { get; private set; }
 
+        public string? LastAuthorization { get; private set; }
+
         public string? LastUserAgent { get; private set; }
 
         public string? LastSuperProperties { get; private set; }
@@ -142,6 +145,10 @@ public class JsonRetrySpecs
         )
         {
             RequestCount++;
+
+            LastAuthorization = request.Headers.TryGetValues("Authorization", out var authorization)
+                ? string.Join(" ", authorization)
+                : null;
 
             LastUserAgent = request.Headers.TryGetValues("User-Agent", out var userAgents)
                 ? string.Join(" ", userAgents)

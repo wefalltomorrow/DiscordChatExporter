@@ -2,7 +2,6 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
-using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -16,7 +15,6 @@ using DiscordChatExporter.Core.Exceptions;
 using DiscordChatExporter.Core.Exporting.Progress;
 using DiscordChatExporter.Core.Utils;
 using Gress;
-using HttpCloak;
 using JsonExtensions.Http;
 using JsonExtensions.Reading;
 using Polly;
@@ -32,69 +30,17 @@ public class DiscordClient(
     private const int JsonParseRetryAttempts = 5;
 
     internal const int InvalidRequestCircuitBreakerThreshold = 25;
-    internal const int UserRequestConcurrencyLimit = 1;
     internal const int BotRequestConcurrencyLimit = 16;
-    internal static readonly TimeSpan UserRequestStartInterval = TimeSpan.FromMilliseconds(750);
     internal static readonly TimeSpan InvalidRequestCircuitBreakerWindow = TimeSpan.FromMinutes(10);
     internal static readonly TimeSpan AdaptiveRateLimitWindow = TimeSpan.FromMinutes(10);
 
-    private const string DisableBrowserTransportEnvironmentVariable =
-        "DISCORDCHATEXPORTER_DISABLE_BROWSER_TRANSPORT";
-
-    // HttpCloak's in-process .NET native binding currently has an unresolved
-    // host-process crash on Linux. Keep the browser-fingerprint transport on
-    // Windows, where that issue is not reproduced, and retain HttpClient
-    // elsewhere for process stability. The environment override gives users
-    // a recovery switch if the native transport causes trouble on a machine.
-    internal static bool ShouldUseBrowserTransport(string? disabledValue, bool isWindows) =>
-        isWindows
-        && !string.Equals(disabledValue, "1", StringComparison.OrdinalIgnoreCase)
-        && !string.Equals(disabledValue, "true", StringComparison.OrdinalIgnoreCase)
-        && !string.Equals(disabledValue, "yes", StringComparison.OrdinalIgnoreCase)
-        && !string.Equals(disabledValue, "on", StringComparison.OrdinalIgnoreCase);
-
-    internal static (T? Session, string Reason) InitializeBrowserTransport<T>(
-        bool isWindows,
-        string? disabledValue,
-        Func<T> createSession
-    )
-        where T : class
-    {
-        if (!isWindows)
-            return (null, "Browser transport is supported only on Windows.");
-        if (!ShouldUseBrowserTransport(disabledValue, isWindows))
-            return (null, "Browser transport was disabled by the environment override.");
-
-        try
-        {
-            return (createSession(), "Browser transport initialized successfully.");
-        }
-        catch (Exception ex)
-        {
-            // Browser impersonation is an enhancement, not a reason to make the
-            // exporter unusable. Fall back to managed HttpClient if the native
-            // transport cannot initialize on this system.
-            // Exception messages can contain machine paths or other private data.
-            return (null, $"Browser transport initialization failed ({ex.GetType().Name}).");
-        }
-    }
-
     private readonly Uri _baseUri = new("https://discord.com/api/v10/", UriKind.Absolute);
     private readonly HttpClient _httpClient = Http.Client;
-    private readonly (Session? Session, string Reason) _browserTransport =
-        InitializeBrowserTransport(
-            OperatingSystem.IsWindows(),
-            Environment.GetEnvironmentVariable(DisableBrowserTransportEnvironmentVariable),
-            () => new Session(preset: Presets.Chrome150Windows, retry: 0)
-        );
-    private readonly DiscordUserClientProfile _userClientProfile = new();
+    private readonly bool _allowInjectedRequests;
     private readonly Func<TimeSpan, CancellationToken, ValueTask> _delayAsync = static (
         delay,
         cancellationToken
     ) => new ValueTask(Task.Delay(delay, cancellationToken));
-    private readonly bool _refreshUserClientBuildNumber = true;
-    private readonly UserTokenRequestStopStore _userTokenRequestStopStore =
-        UserTokenRequestStopStore.CreateDefault();
     private readonly object _rateLimitSync = new();
     private readonly object _invalidRequestSync = new();
     private readonly object _hardRateLimitSync = new();
@@ -104,19 +50,12 @@ public class DiscordClient(
         (TokenKind Kind, string Url),
         HttpStatusCode
     > _knownUnavailableRequests = new();
-    private readonly SemaphoreSlim _userRequestGate = new(
-        UserRequestConcurrencyLimit,
-        UserRequestConcurrencyLimit
-    );
     private readonly SemaphoreSlim _botRequestGate = new(
         BotRequestConcurrencyLimit,
         BotRequestConcurrencyLimit
     );
-    private readonly SemaphoreSlim _userRequestStartGate = new(1, 1);
     private readonly SemaphoreSlim _tokenResolutionGate = new(1, 1);
     private string? _requestStopReason;
-    private TimeSpan _userRequestStartInterval = UserRequestStartInterval;
-    private DateTimeOffset _lastUserRequestStartedUtc;
     private DateTimeOffset _sharedRateLimitUntilUtc;
     private long _apiRequestCount;
     private long _avoidedUnavailableRequestCount;
@@ -137,40 +76,15 @@ public class DiscordClient(
         string tokenOverride,
         RateLimitPreference rateLimitPreferenceOverride,
         HttpClient httpClient,
-        Func<TimeSpan, CancellationToken, ValueTask>? delayAsync = null,
-        UserTokenRequestStopStore? userTokenRequestStopStore = null
+        Func<TimeSpan, CancellationToken, ValueTask>? delayAsync = null
     )
         : this(tokenOverride, rateLimitPreferenceOverride)
     {
-        if (userTokenRequestStopStore is not null)
-            _userTokenRequestStopStore = userTokenRequestStopStore;
-
         _httpClient = httpClient;
-        _browserTransport.Session?.Dispose();
-        _browserTransport = (null, "A managed HTTP client was supplied.");
-        _refreshUserClientBuildNumber = false;
-        _userRequestStartInterval = TimeSpan.Zero;
+        _allowInjectedRequests = true;
 
         if (delayAsync is not null)
             _delayAsync = delayAsync;
-    }
-
-    private static HttpResponseMessage ToHttpResponseMessage(Response source, Uri requestUri)
-    {
-        var response = new HttpResponseMessage((HttpStatusCode)source.StatusCode)
-        {
-            Content = new ByteArrayContent(source.Content),
-            ReasonPhrase = source.Reason,
-            RequestMessage = new HttpRequestMessage(HttpMethod.Get, requestUri),
-        };
-
-        foreach (var (name, values) in source.Headers)
-        {
-            if (!response.Headers.TryAddWithoutValidation(name, values))
-                response.Content.Headers.TryAddWithoutValidation(name, values);
-        }
-
-        return response;
     }
 
     private (DateTimeOffset PauseUntil, TimeSpan Delay) ExtendSharedRateLimit(TimeSpan delay)
@@ -310,30 +224,6 @@ public class DiscordClient(
         await WaitForRateLimitAsync(delay + cushion, cancellationToken);
     }
 
-    private async ValueTask WaitForUserRequestStartAsync(
-        CancellationToken cancellationToken = default
-    )
-    {
-        if (_userRequestStartInterval <= TimeSpan.Zero)
-            return;
-
-        await _userRequestStartGate.WaitAsync(cancellationToken);
-        try
-        {
-            var now = DateTimeOffset.UtcNow;
-            var remaining = _lastUserRequestStartedUtc + _userRequestStartInterval - now;
-
-            if (remaining > TimeSpan.Zero)
-                await _delayAsync(remaining, cancellationToken);
-
-            _lastUserRequestStartedUtc = DateTimeOffset.UtcNow;
-        }
-        finally
-        {
-            _userRequestStartGate.Release();
-        }
-    }
-
     private HttpResponseMessage CreateCachedUnavailableResponse(
         string url,
         HttpStatusCode statusCode
@@ -355,31 +245,17 @@ public class DiscordClient(
     public string GetDiagnosticSummary()
     {
         var stats = GetRequestStats();
-        var transport =
-            _resolvedTokenKind == TokenKind.Bot ? "HttpClient (bot token)"
-            : _browserTransport.Session is not null ? "HttpCloak"
-            : "HttpClient";
-        var reason =
-            _resolvedTokenKind == TokenKind.Bot
-                ? "Bot requests use the managed transport."
-                : _browserTransport.Reason;
         var status = Volatile.Read(ref _lastResponseStatus);
         return $"""
             Core version: {typeof(DiscordClient).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion}
             OS: {System.Runtime.InteropServices.RuntimeInformation.OSDescription}
             Architecture: {System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}
             Token kind: {_resolvedTokenKind?.ToString() ?? "not resolved"}
-            {(
-                _resolvedTokenKind is null
-                    ? "Configured user-token transport"
-                    : "Selected transport"
-            )}: {transport}
-            {reason}
+            Live Discord API: disabled
             Last attempted request transport: {Volatile.Read(ref _lastRequestTransport) ?? "none"}
             Last HTTP response: {(
                 status != 0 ? status.ToString(CultureInfo.InvariantCulture) : "none"
             )}
-            User-token pacing: {UserRequestConcurrencyLimit} request slot, {UserRequestStartInterval.TotalMilliseconds} ms between request starts
             Request stop reason: {Volatile.Read(ref _requestStopReason) ?? "none"}
             Client totals: {stats.RequestCount} API requests, {stats.HardRateLimitCount} HTTP 429 responses, {stats.AdvisoryPauseCount} advisory pauses, {stats.AvoidedUnavailableRequestCount} unavailable requests avoided
             """;
@@ -438,40 +314,6 @@ public class DiscordClient(
             throw new DiscordChatExporterException(reason, true);
     }
 
-    private void ThrowIfPersistentUserTokenStop(TokenKind tokenKind)
-    {
-        if (
-            tokenKind == TokenKind.User
-            && _userTokenRequestStopStore.TryGetStopReason(token, out var reason)
-        )
-            throw StopRequests(reason!);
-    }
-
-    private DiscordChatExporterException StopAfterUserTokenRateLimit()
-    {
-        if (_resolvedTokenKind != TokenKind.User)
-        {
-            return StopRequests(
-                "Discord returned HTTP 429 while this client was checking a token as a user token. The client is stopped, but token type was not confirmed so no persistent user-token stop was recorded. Do not restart automatically."
-            );
-        }
-
-        try
-        {
-            _userTokenRequestStopStore.MarkStopped(token);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return StopRequests(
-                "Discord returned HTTP 429 for a user-token request. Further requests from this client have been stopped, but the local stop could not be saved across restarts. Do not restart or resume this run."
-            );
-        }
-
-        return StopRequests(
-            "Discord returned HTTP 429 for a user-token request. Further requests from this client and future runs of this fork using this token under the same OS user profile have been stopped."
-        );
-    }
-
     private async ValueTask CheckAccountRestrictionAsync(
         HttpResponseMessage response,
         CancellationToken cancellationToken
@@ -480,8 +322,8 @@ public class DiscordClient(
         if (response.IsSuccessStatusCode)
             return;
 
-        // The first 401 can be the user-token probe for a bot token. Once resolved,
-        // authentication loss must stop every channel using this client.
+        // Once a bot token has been accepted, authentication loss stops every channel
+        // using this client.
         if (response.StatusCode == HttpStatusCode.Unauthorized && _resolvedTokenKind is not null)
             throw StopRequests(
                 "Discord rejected authentication. Further requests from this client have been stopped."
@@ -528,17 +370,24 @@ public class DiscordClient(
         CancellationToken cancellationToken = default
     )
     {
+        if (!_allowInjectedRequests)
+            throw StopRequests(
+                "Live Discord API access is disabled in this offline-only build. Use local conversion for files already on this device."
+            );
+
+        if (tokenKind == TokenKind.User)
+            throw StopRequests(
+                "Personal-account authentication is disabled. This build sends Discord API requests with bot authentication only."
+            );
+
         ThrowIfRequestsStopped();
-        ThrowIfPersistentUserTokenStop(tokenKind);
         if (_knownUnavailableRequests.TryGetValue((tokenKind, url), out var cachedStatusCode))
         {
             Interlocked.Increment(ref _avoidedUnavailableRequestCount);
             return CreateCachedUnavailableResponse(url, cachedStatusCode);
         }
 
-        // Keep the slot through response processing and retries. A queued user
-        // request must not overtake a response that is establishing a cooldown.
-        var requestGate = tokenKind == TokenKind.User ? _userRequestGate : _botRequestGate;
+        var requestGate = _botRequestGate;
         await requestGate.WaitAsync(cancellationToken);
         var resilienceContext = ResilienceContextPool.Shared.Get(cancellationToken);
         resilienceContext.Properties.Set(Http.RateLimitDelayHandlerKey, WaitForHardRateLimitAsync);
@@ -549,60 +398,30 @@ public class DiscordClient(
                 async innerContext =>
                 {
                     ThrowIfRequestsStopped();
-                    ThrowIfPersistentUserTokenStop(tokenKind);
                     await WaitForSharedRateLimitAsync(innerContext.CancellationToken);
 
                     var requestUri = new Uri(_baseUri, url);
                     var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                     {
-                        ["Authorization"] = tokenKind == TokenKind.Bot ? $"Bot {token}" : token,
+                        ["Authorization"] = $"Bot {token}",
                     };
-
-                    if (tokenKind == TokenKind.User)
-                    {
-                        await _userClientProfile.AddHeadersAsync(
-                            headers,
-                            innerContext.CancellationToken,
-                            _refreshUserClientBuildNumber
-                        );
-                    }
 
                     HttpResponseMessage response;
                     ThrowIfRequestsStopped();
-                    if (tokenKind == TokenKind.User)
-                        await WaitForUserRequestStartAsync(innerContext.CancellationToken);
-                    ThrowIfRequestsStopped();
-                    ThrowIfPersistentUserTokenStop(tokenKind);
 
                     Interlocked.Increment(ref _apiRequestCount);
 
-                    if (tokenKind == TokenKind.User && _browserTransport.Session is not null)
-                    {
-                        Volatile.Write(ref _lastRequestTransport, "HttpCloak");
-                        var cloakResponse = await _browserTransport.Session.GetAsync(
-                            requestUri.ToString(),
-                            headers: headers,
-                            cancellationToken: innerContext.CancellationToken
-                        );
+                    Volatile.Write(ref _lastRequestTransport, "HttpClient");
+                    using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+                    foreach (var (name, value) in headers)
+                        request.Headers.TryAddWithoutValidation(name, value);
 
-                        response = ToHttpResponseMessage(cloakResponse, requestUri);
-                    }
-                    else
-                    {
-                        Volatile.Write(ref _lastRequestTransport, "HttpClient");
-                        using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
-                        foreach (var (name, value) in headers)
-                            request.Headers.TryAddWithoutValidation(name, value);
+                    response = await _httpClient.SendAsync(
+                        request,
+                        HttpCompletionOption.ResponseHeadersRead,
+                        innerContext.CancellationToken
+                    );
 
-                        response = await _httpClient.SendAsync(
-                            request,
-                            HttpCompletionOption.ResponseHeadersRead,
-                            innerContext.CancellationToken
-                        );
-                    }
-
-                    // Inspect before releasing the user request slot: queued channels
-                    // must observe a stop before they can send another request.
                     try
                     {
                         Volatile.Write(ref _lastResponseStatus, (int)response.StatusCode);
@@ -610,15 +429,6 @@ public class DiscordClient(
                             response,
                             innerContext.CancellationToken
                         );
-
-                        if (
-                            tokenKind == TokenKind.User
-                            && response.StatusCode == HttpStatusCode.TooManyRequests
-                        )
-                        {
-                            RecordHardRateLimit();
-                            throw StopAfterUserTokenRateLimit();
-                        }
 
                         RecordInvalidRequestOrThrow(response);
                     }
@@ -721,22 +531,6 @@ public class DiscordClient(
         if (_resolvedTokenKind is not null)
             return _resolvedTokenKind.Value;
 
-        // Try authenticating as a user
-        using var userResponse = await GetResponseAsync(
-            "users/@me",
-            TokenKind.User,
-            cancellationToken
-        );
-
-        if (userResponse.IsSuccessStatusCode)
-            return (_resolvedTokenKind = TokenKind.User).Value;
-
-        if (userResponse.StatusCode != HttpStatusCode.Unauthorized)
-            throw new DiscordChatExporterException(
-                $"Token probe failed: {userResponse.StatusCode.ToString().SeparateWords(' ').ToLowerInvariant()}."
-            );
-
-        // Try authenticating as a bot
         using var botResponse = await GetResponseAsync(
             "users/@me",
             TokenKind.Bot,
@@ -752,7 +546,7 @@ public class DiscordClient(
             );
 
         throw StopRequests(
-            "Authentication token is invalid. Further requests from this client have been stopped."
+            "Authentication failed. This build accepts bot tokens only; personal-account tokens are not supported."
         );
     }
 
@@ -971,27 +765,8 @@ public class DiscordClient(
     {
         try
         {
-            if (await ResolveTokenKindAsync(cancellationToken) != TokenKind.User)
-                return null;
-
-            var url = new UrlBuilder()
-                .SetPath(
-                    channel.IsDirect
-                        ? $"channels/{channel.Id}/messages/search"
-                        : $"guilds/{channel.GuildId}/messages/search"
-                )
-                .SetQueryParameter("channel_id", channel.IsDirect ? null : channel.Id.ToString())
-                .SetQueryParameter("min_id", (after ?? Snowflake.Zero).ToString())
-                .SetQueryParameter("max_id", before?.ToString())
-                .SetQueryParameter("limit", "1")
-                .Build();
-
-            var (statusCode, response) = await TryGetJsonResponseWithStatusAsync(
-                url,
-                cancellationToken
-            );
-
-            return TryParseMessageSearchTotal(statusCode, response);
+            await ResolveTokenKindAsync(cancellationToken);
+            return null;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -1276,66 +1051,9 @@ public class DiscordClient(
         // https://github.com/Tyrrrz/DiscordChatExporter/issues/1433
         var seenThreadIds = new HashSet<Snowflake>();
 
-        // User accounts can only fetch threads using the search endpoint
-        if (await ResolveTokenKindAsync(cancellationToken) == TokenKind.User)
-        {
-            foreach (var channel in filteredChannels)
-            {
-                // Either include both active and archived threads, or only active threads
-                foreach (
-                    var isArchived in includeArchived ? new[] { false, true } : new[] { false }
-                )
-                {
-                    // Offset is just the index of the last thread in the previous batch
-                    var currentOffset = 0;
-                    while (true)
-                    {
-                        var url = new UrlBuilder()
-                            .SetPath($"channels/{channel.Id}/threads/search")
-                            .SetQueryParameter("sort_by", "last_message_time")
-                            .SetQueryParameter("sort_order", "desc")
-                            .SetQueryParameter("archived", isArchived.ToString().ToLowerInvariant())
-                            .SetQueryParameter("offset", currentOffset.ToString())
-                            .Build();
+        await ResolveTokenKindAsync(cancellationToken);
 
-                        // Can be null on channels that the user cannot access or channels without threads
-                        var response = await TryGetJsonResponseAsync(url, cancellationToken);
-                        if (response is null)
-                            break;
-
-                        var breakOuter = false;
-
-                        foreach (
-                            var threadJson in response.Value.GetProperty("threads").EnumerateArray()
-                        )
-                        {
-                            var thread = Channel.Parse(threadJson, channel);
-
-                            // If the 'after' boundary is specified, we can break early,
-                            // because threads are sorted by last message timestamp.
-                            if (after is not null && !thread.MayHaveMessagesAfter(after.Value))
-                            {
-                                breakOuter = true;
-                                break;
-                            }
-
-                            if (seenThreadIds.Add(thread.Id))
-                                yield return thread;
-
-                            currentOffset++;
-                        }
-
-                        if (breakOuter)
-                            break;
-
-                        if (!response.Value.GetProperty("has_more").GetBoolean())
-                            break;
-                    }
-                }
-            }
-        }
-        // Bot accounts can only fetch threads using the threads endpoint
-        else
+        // Fetch active and archived threads using the supported API endpoints.
         {
             var guilds = new HashSet<Snowflake>();
             foreach (var channel in filteredChannels)
@@ -1457,8 +1175,7 @@ public class DiscordClient(
         CancellationToken cancellationToken = default
     )
     {
-        // Use the listing endpoint with 'around' because the dedicated message endpoint
-        // is not accessible to user tokens.
+        // Use the listing endpoint with 'around' to retrieve a message by ID.
         var url = new UrlBuilder()
             .SetPath($"channels/{channelId}/messages")
             .SetQueryParameter("around", messageId.ToString())
@@ -1815,10 +1532,7 @@ public class DiscordClient(
 
     public void Dispose()
     {
-        _browserTransport.Session?.Dispose();
-        _userRequestGate.Dispose();
         _botRequestGate.Dispose();
-        _userRequestStartGate.Dispose();
         _tokenResolutionGate.Dispose();
     }
 }

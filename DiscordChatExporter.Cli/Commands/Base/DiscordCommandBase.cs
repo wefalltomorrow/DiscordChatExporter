@@ -18,7 +18,7 @@ public abstract class DiscordCommandBase : ICommand
         "token",
         't',
         EnvironmentVariable = "DISCORD_TOKEN",
-        Description = "Authentication token."
+        Description = "Bot authentication token. Personal-account tokens are unsupported."
     )]
     public required string Token { get; set; }
 
@@ -26,14 +26,13 @@ public abstract class DiscordCommandBase : ICommand
         "bot",
         'b',
         EnvironmentVariable = "DISCORD_TOKEN_BOT",
-        Description = "This option doesn't do anything. Kept for backwards compatibility."
+        Description = "Deprecated compatibility option. All live API requests use bot authentication."
     )]
     public bool IsBotToken { get; set; } = false;
 
     [CommandOption(
         "respect-rate-limits",
-        Description = "Whether to respect advisory rate limits for bot-token requests. "
-            + "User-token requests always respect advisory limits; hard rate limits (i.e., 429 responses) are always respected."
+        Description = "Deprecated compatibility option. Discord rate limits are always respected."
     )]
     public bool ShouldRespectRateLimits { get; set; } = true;
 
@@ -50,9 +49,7 @@ public abstract class DiscordCommandBase : ICommand
     }
 
     internal static RateLimitPreference GetRateLimitPreference(bool shouldRespectRateLimits) =>
-        shouldRespectRateLimits
-            ? RateLimitPreference.RespectAll
-            : RateLimitPreference.RespectForUserTokens;
+        RateLimitPreference.RespectAll;
 
     [field: AllowNull, MaybeNull]
     protected DiscordClient Discord => field ??= CreateDiscordClient();
@@ -90,9 +87,7 @@ public abstract class DiscordCommandBase : ICommand
             using (console.WithForegroundColor(ConsoleColor.DarkYellow))
             {
                 console.Error.WriteLine(
-                    "Warning: The --bot option is deprecated and should not be used. "
-                        + "The token type is now inferred automatically. "
-                        + "Please update your workflows as this option may be completely removed in a future version."
+                    "Warning: The --bot option is deprecated. This client uses bot authentication for all live API requests."
                 );
             }
         }

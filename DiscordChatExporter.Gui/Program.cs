@@ -20,8 +20,6 @@ public static class Program
     public static string ProjectUrl { get; } =
         "https://github.com/wefalltomorrow/DiscordChatExporter";
 
-    public static string ProjectReleasesUrl { get; } = $"{ProjectUrl}/releases";
-
     public static string ProjectDocumentationUrl { get; } = ProjectUrl + "/tree/prime/.docs";
 
     public static AppBuilder BuildAvaloniaApp() =>

@@ -12,22 +12,6 @@ public partial class LocalizationManager
             [nameof(SettingsTooltip)] = "Настройки",
             [nameof(LastMessageSentTooltip)] = "Последнее сообщение:",
             [nameof(TokenPlaceholderText)] = "Токен",
-            // Token instructions (personal account)
-            [nameof(TokenPersonalHeader)] = "Как получить токен для персонального аккаунта:",
-            [nameof(TokenPersonalTosWarning)] =
-                "**Риск для аккаунта:** Discord запрещает автоматизацию обычных аккаунтов («self-bots») и предупреждает, что такие аккаунты могут быть заблокированы. Политика разработчиков также запрещает сбор данных через сервисы Discord. Этот режим автоматизирует обычный аккаунт для экспорта сообщений. Интервалы между запросами и HTTP/TLS-транспорт не делают такое использование разрешённым и не гарантируют безопасность аккаунта. Если вам необходимо избежать ограничений или блокировки аккаунта, не используйте этот режим. Ознакомьтесь с [политикой Discord о self-bots](https://support.discord.com/hc/en-us/articles/115002192352-Automated-User-Accounts-Self-Bots) и [политикой для разработчиков](https://support-dev.discord.com/hc/en-us/articles/8563934450327-Discord-Developer-Policy).",
-            [nameof(TokenPersonalInstructions)] = """
-                1. Откройте Discord в вашем веб-браузере и войдите
-                2. Откройте любой сервер или канал личных сообщений
-                3. Нажмите **Ctrl+Shift+I**, чтобы открыть инструменты разработчика
-                4. Перейдите на вкладку **Network**
-                5. Нажмите **Ctrl+R** для перезагрузки
-                6. Переключайтесь между каналами, чтобы вызвать сетевые запросы
-                7. Найдите запрос, который начинается с **messages**
-                8. Выберите вкладку **Headers** справа
-                9. Прокрутите до раздела **Request Headers**
-                10. Скопируйте значение заголовка **authorization**
-                """,
             // Token instructions (bot)
             [nameof(TokenBotHeader)] = "Как получить токен для бота:",
             [nameof(TokenBotInstructions)] = """
@@ -56,9 +40,9 @@ public partial class LocalizationManager
                 Сохранять последний использованный токен в файле для сохранения между сеансами.
                 **Внимание**: хотя токен сохраняется с шифрованием, он может быть восстановлен злоумышленником, имеющим доступ к вашей системе.
                 """,
-            [nameof(RateLimitPreferenceLabel)] = "Лимит запросов",
+            [nameof(RateLimitPreferenceLabel)] = "Лимиты запросов",
             [nameof(RateLimitPreferenceTooltip)] =
-                "Соблюдать ли рекомендованные лимиты запросов. Если отключено, будут соблюдаться только жесткие лимиты (т.е. ответы 429).",
+                "Лимиты запросов Discord соблюдаются всегда. Эта настройка не отключает ожидание.",
             [nameof(ShowThreadsLabel)] = "Показывать ветки",
             [nameof(ShowThreadsTooltip)] = "Какие типы веток показывать в списке каналов",
             [nameof(LocaleLabel)] = "Локаль",

@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Reflection;
 using System.Threading;
+using System.Threading.Tasks;
 using Avalonia.Headless.XUnit;
 using DiscordChatExporter.Core.Discord;
 using DiscordChatExporter.Core.Discord.Data;
@@ -21,6 +22,41 @@ namespace DiscordChatExporter.Gui.Tests;
 // FAB floats into the Export FAB's slot whenever the user is merely logged in (no channel chosen).
 public sealed class DashboardCommandGatingTests
 {
+    [AvaloniaFact]
+    public void Discord_commands_stay_disabled_even_with_a_token_and_selected_channel()
+    {
+        using var vm = CreateViewModel();
+        vm.Token = "unused-offline-token";
+        GetClient(vm, vm.Token);
+        vm.SelectedGuild = new Guild(new Snowflake(1), "Test Guild", "");
+        vm.SelectedChannels.Add(new ChannelConnection(CreateChannel(2), []));
+
+        vm.IsDiscordAccessDisabled.Should().BeTrue();
+        vm.PullGuildsCommand.CanExecute(null).Should().BeFalse();
+        vm.PullChannelsCommand.CanExecute(null).Should().BeFalse();
+        vm.ExportCommand.CanExecute(null).Should().BeFalse();
+        vm.ContinueExportCommand.CanExecute(null).Should().BeFalse();
+    }
+
+    [AvaloniaFact]
+    public async Task Discord_commands_remain_blocked_when_invoked_directly()
+    {
+        using var vm = CreateViewModel();
+        vm.Token = "offline-test-token";
+        var client = GetClient(vm, vm.Token);
+        vm.SelectedGuild = new Guild(new Snowflake(1), "Test Guild", "");
+        vm.SelectedChannels.Add(new ChannelConnection(CreateChannel(2), []));
+
+        await vm.PullGuildsCommand.ExecuteAsync(null);
+        await vm.PullChannelsCommand.ExecuteAsync(null);
+        await vm.ExportCommand.ExecuteAsync(null);
+        await vm.RetryFailedExportCommand.ExecuteAsync(null);
+        await vm.ContinueExportCommand.ExecuteAsync(null);
+
+        client.GetRequestStats().RequestCount.Should().Be(0);
+        vm.IsBusy.Should().BeFalse();
+    }
+
     private static DiscordClient GetClient(DashboardViewModel vm, string token) =>
         (DiscordClient)
             typeof(DashboardViewModel)
@@ -75,7 +111,7 @@ public sealed class DashboardCommandGatingTests
         var refreshed = GetClient(vm, "fake-token");
 
         refreshed.Should().BeSameAs(original);
-        refreshed.RateLimitPreference.Should().Be(RateLimitPreference.IgnoreAll);
+        refreshed.RateLimitPreference.Should().Be(RateLimitPreference.RespectAll);
     }
 
     [AvaloniaFact]

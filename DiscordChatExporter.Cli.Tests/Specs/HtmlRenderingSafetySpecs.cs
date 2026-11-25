@@ -124,6 +124,7 @@ public sealed class HtmlRenderingSafetySpecs : IDisposable
     [InlineData("https://cdn.example/image.png", "https://cdn.example/image.png")]
     [InlineData("Attachments/image.png", "Attachments/image.png")]
     [InlineData("javascript:alert(1)", "#")]
+    [InlineData("file:///C:/Users/ExampleUser/private.png", "#")]
     [InlineData("data:text/html,<script>alert(1)</script>", "#")]
     public void Html_asset_url_sanitizer_preserves_safe_urls_and_blocks_unsafe_schemes(
         string url,
@@ -156,6 +157,21 @@ public sealed class HtmlRenderingSafetySpecs : IDisposable
 
         html.Should().Contain("&lt;img src=x");
         html.Should().NotContain("""<img src=x onerror="alert(1)">""");
+    }
+
+    [Fact]
+    public async Task Html_export_blocks_automatic_remote_resource_loading()
+    {
+        var outputPath = Path.Combine(_dir, "offline.html");
+        await using (var exporter = new MessageExporter(CreateContext(outputPath, true)))
+            await exporter.ExportMessageAsync(CreateMessage("offline"));
+
+        var html = await File.ReadAllTextAsync(outputPath);
+
+        html.Should().Contain("Content-Security-Policy");
+        html.Should().Contain("default-src 'none'");
+        html.Should().Contain("connect-src 'none'");
+        html.Should().Contain("frame-src 'none'");
     }
 
     [Fact]
@@ -281,7 +297,7 @@ public sealed class HtmlRenderingSafetySpecs : IDisposable
     }
 
     [Fact]
-    public async Task Masked_markdown_links_do_not_render_active_javascript_urls()
+    public async Task Unsupported_non_http_masked_links_remain_inert_text()
     {
         var outputPath = Path.Combine(_dir, "chat.html");
         var context = CreateContext(outputPath, true);
@@ -292,7 +308,8 @@ public sealed class HtmlRenderingSafetySpecs : IDisposable
             false
         );
 
-        html.Should().Contain("""href="#">click</a>""");
-        html.Should().NotContain("javascript:alert");
+        html.Should().Contain("[click](javascript:alert(1))");
+        html.Should().NotContain("<a ");
+        html.Should().NotContain("href=");
     }
 }

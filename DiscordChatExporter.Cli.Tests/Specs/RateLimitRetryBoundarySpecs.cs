@@ -22,11 +22,7 @@ public partial class RateLimitSpecs
     [Fact]
     public async Task Exhausted_rate_limit_retries_stop_later_operations()
     {
-        var responses = new List<HttpResponseMessage>
-        {
-            new(HttpStatusCode.Unauthorized),
-            new(HttpStatusCode.OK),
-        };
+        var responses = new List<HttpResponseMessage> { new(HttpStatusCode.OK) };
         for (var i = 0; i < 9; i++)
             responses.Add(CreateRateLimitResponse(TimeSpan.Zero));
         // Would be sent by the next channel if the terminal 429 is not latched.
@@ -44,7 +40,7 @@ public partial class RateLimitSpecs
             var failure = await act.Should().ThrowAsync<DiscordChatExporterException>();
             failure.Which.IsFatal.Should().BeTrue();
         }
-        client.GetRequestStats().RequestCount.Should().Be(11);
+        client.GetRequestStats().RequestCount.Should().Be(10);
         client.GetRequestStats().HardRateLimitCount.Should().Be(9);
     }
 
@@ -59,7 +55,6 @@ public partial class RateLimitSpecs
         response.Content = new StringContent(body);
         using var http = new HttpClient(
             new QueueHttpMessageHandler([
-                new(HttpStatusCode.Unauthorized),
                 new(HttpStatusCode.OK),
                 response,
                 new(HttpStatusCode.NotFound),
@@ -89,7 +84,6 @@ public partial class RateLimitSpecs
         );
         using var http = new HttpClient(
             new QueueHttpMessageHandler([
-                new(HttpStatusCode.Unauthorized),
                 new(HttpStatusCode.OK),
                 response,
                 new(HttpStatusCode.NotFound),

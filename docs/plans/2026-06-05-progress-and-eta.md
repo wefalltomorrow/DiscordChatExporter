@@ -1,5 +1,7 @@
 # Honest Progress Bar + Time-Remaining — Implementation Plan
 
+> **Historical / superseded guidance (June 5, 2026):** This plan describes a live-export design that is not part of the current offline-only candidate. Its token-based validation steps are obsolete; do not treat them as instructions for the current build.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development or executing-plans. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** Stop the progress bar racing-then-stalling and the ETA ballooning/jumping. **Phase 1** (drop-in `EtaEstimator` rewrite, no plumbing) de-balloons immediately and SHIPS ALONE. **Phase 2** (count-based progress via an approximate total) is the real fix and is GATED on a live-token verification (with a density-sampling fallback if it fails).

@@ -181,6 +181,8 @@ public partial class DashboardViewModel : ViewModelBase
 
     public LocalizationManager LocalizationManager { get; }
 
+    public bool IsDiscordAccessDisabled => true;
+
     public bool CanCancelOperation => _operationCancellation is { IsCancellationRequested: false };
 
     internal CancellationToken BeginCancelableOperation()
@@ -253,9 +255,6 @@ public partial class DashboardViewModel : ViewModelBase
 
     public override Task InitializeAsync()
     {
-        if (!string.IsNullOrWhiteSpace(_settingsService.LastToken))
-            Token = _settingsService.LastToken;
-
         return Task.CompletedTask;
     }
 
@@ -264,11 +263,11 @@ public partial class DashboardViewModel : ViewModelBase
         // Refreshing the same account must preserve stops, cooldowns, and request history.
         if (_discord is not null && string.Equals(_discordToken, token, StringComparison.Ordinal))
         {
-            _discord.RateLimitPreference = _settingsService.RateLimitPreference;
+            _discord.RateLimitPreference = RateLimitPreference.RespectAll;
             return _discord;
         }
 
-        var discord = new DiscordClient(token, _settingsService.RateLimitPreference);
+        var discord = new DiscordClient(token, RateLimitPreference.RespectAll);
         var previous = _discord;
         if (previous is not null)
             previous.RateLimitChanged -= HandleRateLimitChanged;
@@ -330,11 +329,15 @@ public partial class DashboardViewModel : ViewModelBase
         CancelOperationCommand.NotifyCanExecuteChanged();
     }
 
-    private bool CanPullGuilds() => !IsBusy && !string.IsNullOrWhiteSpace(Token);
+    private bool CanPullGuilds() =>
+        !IsDiscordAccessDisabled && !IsBusy && !string.IsNullOrWhiteSpace(Token);
 
     [RelayCommand(CanExecute = nameof(CanPullGuilds))]
     private async Task PullGuildsAsync()
     {
+        if (IsDiscordAccessDisabled)
+            return;
+
         IsBusy = true;
         var progress = _progressMuxer.CreateInput();
 
@@ -351,7 +354,6 @@ public partial class DashboardViewModel : ViewModelBase
             ClearFailedExportState();
 
             var discord = GetOrCreateDiscordClient(token);
-            _settingsService.LastToken = token;
 
             var guilds = await discord.GetUserGuildsAsync();
 
@@ -380,11 +382,15 @@ public partial class DashboardViewModel : ViewModelBase
         }
     }
 
-    private bool CanPullChannels() => !IsBusy && _discord is not null && SelectedGuild is not null;
+    private bool CanPullChannels() =>
+        !IsDiscordAccessDisabled && !IsBusy && _discord is not null && SelectedGuild is not null;
 
     [RelayCommand(CanExecute = nameof(CanPullChannels))]
     private async Task PullChannelsAsync()
     {
+        if (IsDiscordAccessDisabled)
+            return;
+
         IsBusy = true;
         var progress = _progressMuxer.CreateInput();
 
@@ -494,7 +500,8 @@ public partial class DashboardViewModel : ViewModelBase
         SelectedChannels.Any(c => !c.Channel.IsCategory);
 
     private bool CanExport() =>
-        !IsBusy
+        !IsDiscordAccessDisabled
+        && !IsBusy
         && _discord is not null
         && SelectedGuild is not null
         && HasSelectedExportableChannels();
@@ -774,6 +781,9 @@ public partial class DashboardViewModel : ViewModelBase
     [RelayCommand(CanExecute = nameof(CanExport))]
     private async Task ExportAsync()
     {
+        if (IsDiscordAccessDisabled)
+            return;
+
         IsBusy = true;
         ResetExportProgressDisplay();
 
@@ -1230,7 +1240,8 @@ public partial class DashboardViewModel : ViewModelBase
     }
 
     private bool CanRetryFailedExport() =>
-        !IsBusy
+        !IsDiscordAccessDisabled
+        && !IsBusy
         && _discord is not null
         && _lastExportSetup is not null
         && _lastFailedChannels.Count > 0;
@@ -1238,7 +1249,12 @@ public partial class DashboardViewModel : ViewModelBase
     [RelayCommand(CanExecute = nameof(CanRetryFailedExport))]
     private async Task RetryFailedExportAsync()
     {
-        if (_discord is null || _lastExportSetup is null || _lastFailedChannels.Count == 0)
+        if (
+            IsDiscordAccessDisabled
+            || _discord is null
+            || _lastExportSetup is null
+            || _lastFailedChannels.Count == 0
+        )
             return;
 
         IsBusy = true;
@@ -1283,7 +1299,8 @@ public partial class DashboardViewModel : ViewModelBase
     // the Export FAB's slot whenever you're merely authenticated. Regressed twice now — see the
     // DashboardCommandGatingTests guard.
     private bool CanContinueExport() =>
-        !IsBusy
+        !IsDiscordAccessDisabled
+        && !IsBusy
         && _discord is not null
         && SelectedGuild is not null
         && HasSelectedExportableChannels();
@@ -1291,6 +1308,9 @@ public partial class DashboardViewModel : ViewModelBase
     [RelayCommand(CanExecute = nameof(CanContinueExport))]
     private async Task ContinueExportAsync()
     {
+        if (IsDiscordAccessDisabled)
+            return;
+
         var selectedChannels = GetSelectedExportableChannels();
         if (_discord is null || SelectedGuild is null || selectedChannels.Length <= 0)
             return;

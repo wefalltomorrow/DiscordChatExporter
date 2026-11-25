@@ -1,17 +1,11 @@
-using System;
-using System.Reflection;
-using Microsoft.Extensions.Configuration;
+using Xunit.Sdk;
 
 namespace DiscordChatExporter.Cli.Tests.Infra;
 
 internal static class Secrets
 {
-    private static readonly IConfigurationRoot Configuration = new ConfigurationBuilder()
-        .AddUserSecrets(Assembly.GetExecutingAssembly())
-        .AddEnvironmentVariables()
-        .Build();
-
     public static string DiscordToken =>
-        Configuration["DISCORD_TOKEN"]
-        ?? throw new InvalidOperationException("Discord token not provided for tests.");
+        throw SkipException.ForSkip(
+            "Live Discord integration tests are disabled in this offline-only build."
+        );
 }

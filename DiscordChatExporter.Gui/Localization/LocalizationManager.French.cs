@@ -14,22 +14,6 @@ public partial class LocalizationManager
         [nameof(SettingsTooltip)] = "Paramètres",
         [nameof(LastMessageSentTooltip)] = "Dernier message envoyé :",
         [nameof(TokenPlaceholderText)] = "Token",
-        // Token instructions (personal account)
-        [nameof(TokenPersonalHeader)] = "Obtenir le token pour votre compte personnel :",
-        [nameof(TokenPersonalTosWarning)] =
-            "**Risque pour le compte :** Discord interdit l'automatisation des comptes personnels (« self-bots ») et indique que les comptes concernés peuvent être résiliés. Sa politique développeur interdit également l'extraction de données via les services Discord. Le mode compte personnel de cette application automatise un compte normal pour exporter des messages. Le rythme des requêtes et le transport HTTP/TLS ne rendent pas cette utilisation autorisée et ne garantissent pas la sécurité du compte. Si vous devez éviter les restrictions ou la résiliation de votre compte, n'utilisez pas ce mode. Consultez la [politique sur les self-bots](https://support.discord.com/hc/en-us/articles/115002192352-Automated-User-Accounts-Self-Bots) et la [politique développeur](https://support-dev.discord.com/hc/en-us/articles/8563934450327-Discord-Developer-Policy).",
-        [nameof(TokenPersonalInstructions)] = """
-            1. Ouvrez Discord dans votre navigateur web et connectez-vous
-            2. Ouvrez n'importe quel serveur ou canal de message direct
-            3. Appuyez sur **Ctrl+Shift+I** pour afficher les outils de développement
-            4. Naviguez vers l'onglet **Network**
-            5. Appuyez sur **Ctrl+R** pour recharger
-            6. Changez de canal pour déclencher des requêtes réseau
-            7. Cherchez une requête commençant par **messages**
-            8. Sélectionnez l'onglet **Headers** à droite
-            9. Faites défiler jusqu'à la section **Request Headers**
-            10. Copiez la valeur de l'en-tête **authorization**
-            """,
         // Token instructions (bot)
         [nameof(TokenBotHeader)] = "Obtenir le token pour votre bot :",
         [nameof(TokenBotInstructions)] = """
@@ -58,9 +42,9 @@ public partial class LocalizationManager
             Enregistrer le dernier token utilisé dans un fichier pour le conserver entre les sessions.
             **Avertissement** : bien que le token soit stocké avec chiffrement, il peut toujours être récupéré par un attaquant ayant accès à votre système.
             """,
-        [nameof(RateLimitPreferenceLabel)] = "Préférence de limite de débit",
+        [nameof(RateLimitPreferenceLabel)] = "Limites de débit",
         [nameof(RateLimitPreferenceTooltip)] =
-            "Indique s'il faut respecter les limites de débit recommandées. Si désactivé, seules les limites strictes (réponses 429) seront respectées.",
+            "Les limites de débit de Discord sont toujours respectées. Ce paramètre ne peut pas désactiver les délais d'attente.",
         [nameof(ShowThreadsLabel)] = "Afficher les fils",
         [nameof(ShowThreadsTooltip)] = "Quels types de fils afficher dans la liste des canaux",
         [nameof(LocaleLabel)] = "Locale",

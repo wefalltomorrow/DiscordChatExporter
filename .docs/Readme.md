@@ -1,34 +1,15 @@
-# Home
+# Offline archive tools
 
-## Installation & Usage
+This build works with local files. It does not connect to Discord to sign in, list channels, fetch messages, or download assets.
 
-- Getting started:
-  - [Using the GUI](Using-the-GUI.md)
-  - [Using the CLI](Using-the-CLI.md)
-  - [File formats](Getting-started.md#file-formats)
-  - [Continuing exports](Using-the-GUI.md#continue-exports)
-  - [Library and search](Using-the-GUI.md#library)
-  - [Converting JSON exports](Using-the-GUI.md#convert-json-exports)
+- [Getting started](Getting-started.md)
+- [Using the GUI](Using-the-GUI.md)
+- [Using the CLI](Using-the-CLI.md)
+- [Supported input files and Data Package limits](Token-and-IDs.md)
+- [Docker conversion](Docker.md)
+- [Scheduling local conversions on Windows](Scheduling-Windows.md)
+- [Scheduling local conversions on macOS](Scheduling-MacOS.md)
+- [Scheduling local conversions on Linux](Scheduling-Linux.md)
+- [Troubleshooting](Troubleshooting.md)
 
-## Guides
-
-- [How to get Token and Channel IDs](Token-and-IDs.md)
-- [How to use message filters](Message-filters.md)
-- Export scheduling with CLI:
-  - [Windows](Scheduling-Windows.md)
-  - [macOS](Scheduling-MacOS.md)
-  - [Linux](Scheduling-Linux.md)
-
-## Video tutorial
-
-- Video by [NoIntro Tutorials](https://youtube.com/channel/UCFezKSxdNKJe77-hYiuXu3Q) (using DiscordChatExporter GUI)
-
-[![Video tutorial](https://i.ytimg.com/vi/jjtu0VQXV7I/hqdefault.jpg)](https://youtube.com/watch?v=jjtu0VQXV7I)
-
-## FAQ & Troubleshooting
-
-- [General questions](Troubleshooting.md#general)
-- [First steps help](Troubleshooting.md#first-steps)
-- [It's crashing/failing](Troubleshooting.md#DCE-is-crashingfailing)
-- [Errors](Troubleshooting.md#errors)
-- [**More help**](Troubleshooting.md)
+The old live-export, token, ID, and message-filter workflows are not available in this candidate build. The account-risk milestone remains unresolved; see the [release readiness notes](../docs/ReleaseReadiness.md).

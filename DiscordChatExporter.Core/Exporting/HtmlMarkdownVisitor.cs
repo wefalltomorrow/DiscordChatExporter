@@ -383,7 +383,7 @@ internal partial class HtmlMarkdownVisitor
         if (!uri.IsAbsoluteUri)
             return !url.StartsWith("//", StringComparison.Ordinal);
 
-        return uri.Scheme is "http" or "https" or "file";
+        return uri.Scheme is "http" or "https";
     }
 
     public static async ValueTask<string> FormatAsync(

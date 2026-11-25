@@ -14,22 +14,6 @@ public partial class LocalizationManager
         [nameof(SettingsTooltip)] = "Einstellungen",
         [nameof(LastMessageSentTooltip)] = "Letzte Nachricht gesendet:",
         [nameof(TokenPlaceholderText)] = "Token",
-        // Token instructions (personal account)
-        [nameof(TokenPersonalHeader)] = "Token für Ihr persönliches Konto abrufen:",
-        [nameof(TokenPersonalTosWarning)] =
-            "**Kontorisiko:** Discord verbietet die Automatisierung normaler Benutzerkonten („Self-Bots“) und weist darauf hin, dass solche Konten gekündigt werden können. Die Entwickler-Richtlinie verbietet außerdem das Scrapen von Daten über Discord-Dienste. Dieser persönliche Kontomodus automatisiert ein normales Konto, um Nachrichten zu exportieren. Abfrageintervalle und HTTP/TLS-Transport machen diese Nutzung nicht zulässig und garantieren keine Kontosicherheit. Wenn du Kontobeschränkungen oder eine Kündigung vermeiden musst, verwende diesen Modus nicht. Lies Discords [Self-Bot-Richtlinie](https://support.discord.com/hc/en-us/articles/115002192352-Automated-User-Accounts-Self-Bots) und [Entwickler-Richtlinie](https://support-dev.discord.com/hc/en-us/articles/8563934450327-Discord-Developer-Policy).",
-        [nameof(TokenPersonalInstructions)] = """
-            1. Öffnen Sie Discord in Ihrem Webbrowser und melden Sie sich an
-            2. Öffnen Sie einen Server oder einen direkten Nachrichtenkanal
-            3. Drücken Sie **Ctrl+Shift+I**, um die Entwicklertools anzuzeigen
-            4. Navigieren Sie zum Reiter **Network**
-            5. Drücken Sie **Ctrl+R** zum Neuladen
-            6. Wechseln Sie zwischen Kanälen, um Netzwerkanfragen auszulösen
-            7. Suchen Sie nach einer Anfrage, die mit **messages** beginnt
-            8. Wählen Sie den Reiter **Headers** auf der rechten Seite
-            9. Scrollen Sie nach unten zum Abschnitt **Request Headers**
-            10. Kopieren Sie den Wert des Headers **authorization**
-            """,
         // Token instructions (bot)
         [nameof(TokenBotHeader)] = "Token für Ihren Bot abrufen:",
         [nameof(TokenBotInstructions)] = """
@@ -58,9 +42,9 @@ public partial class LocalizationManager
             Den zuletzt verwendeten Token in einer Datei speichern, damit er zwischen Sitzungen erhalten bleibt.
             **Warnung**: Der Token wird mit Verschlüsselung gespeichert, kann aber dennoch von einem Angreifer mit Zugriff auf Ihr System wiederhergestellt werden.
             """,
-        [nameof(RateLimitPreferenceLabel)] = "Ratenlimit-Einstellung",
+        [nameof(RateLimitPreferenceLabel)] = "Ratenlimits",
         [nameof(RateLimitPreferenceTooltip)] =
-            "Ob empfohlene Ratenlimits eingehalten werden sollen. Wenn deaktiviert, werden nur harte Ratenlimits (d. h. 429-Antworten) eingehalten.",
+            "Discord-Ratenlimits werden immer eingehalten. Diese Einstellung kann Wartezeiten nicht deaktivieren.",
         [nameof(ShowThreadsLabel)] = "Threads anzeigen",
         [nameof(ShowThreadsTooltip)] = "Welche Thread-Typen in der Kanalliste angezeigt werden",
         [nameof(LocaleLabel)] = "Gebietsschema",

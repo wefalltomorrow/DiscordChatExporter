@@ -26,11 +26,9 @@ public partial class StartOptions
                 AppContext.BaseDirectory,
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)
             ),
-            IsAutoUpdateAllowed = !(
-                Environment.GetEnvironmentVariable("DISCORDCHATEXPORTER_ALLOW_AUTO_UPDATE")
-                    is { } env
-                && env.Equals("false", StringComparison.OrdinalIgnoreCase)
-            ),
+            // This candidate must not update itself to a previously published build that still
+            // has live Discord access.
+            IsAutoUpdateAllowed = false,
         };
 
     internal static string ResolveSettingsPath(

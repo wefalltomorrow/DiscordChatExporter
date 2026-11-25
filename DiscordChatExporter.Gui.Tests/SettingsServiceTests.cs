@@ -9,35 +9,50 @@ namespace DiscordChatExporter.Gui.Tests;
 public sealed class SettingsServiceTests
 {
     [Fact]
-    public void Token_persistence_is_opt_out_by_default()
+    public void Legacy_account_tokens_are_removed_when_settings_load()
     {
-        var settingsService = new SettingsService();
-
-        settingsService.IsTokenPersisted.Should().BeTrue();
-    }
-
-    [Fact]
-    public void Failed_save_restores_non_persisted_token_in_memory()
-    {
-        var settingsPath = Path.Combine(Path.GetTempPath(), $"dce-settings-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(settingsPath);
+        var settingsPath = Path.Combine(
+            Path.GetTempPath(),
+            $"dce-settings-{Guid.NewGuid():N}.json"
+        );
+        File.WriteAllText(settingsPath, "{\"LastToken\":\"legacy-token\"}");
 
         try
         {
-            var settingsService = new SettingsService(settingsPath)
-            {
-                IsTokenPersisted = false,
-                LastToken = "token",
-            };
+            var settingsService = new SettingsService(settingsPath);
+            settingsService.Load().Should().BeTrue();
 
-            var act = settingsService.Save;
-
-            act.Should().Throw<Exception>();
-            settingsService.LastToken.Should().Be("token");
+            settingsService.LastToken.Should().BeNull();
+            File.ReadAllText(settingsPath).Should().NotContain("legacy-token");
         }
         finally
         {
-            Directory.Delete(settingsPath, true);
+            if (File.Exists(settingsPath))
+                File.Delete(settingsPath);
+        }
+    }
+
+    [Fact]
+    public void Save_does_not_write_an_account_token()
+    {
+        var settingsPath = Path.Combine(
+            Path.GetTempPath(),
+            $"dce-settings-{Guid.NewGuid():N}.json"
+        );
+
+        try
+        {
+            var settingsService = new SettingsService(settingsPath) { LastToken = "legacy-token" };
+
+            settingsService.Save();
+
+            settingsService.LastToken.Should().BeNull();
+            File.ReadAllText(settingsPath).Should().NotContain("legacy-token");
+        }
+        finally
+        {
+            if (File.Exists(settingsPath))
+                File.Delete(settingsPath);
         }
     }
 }

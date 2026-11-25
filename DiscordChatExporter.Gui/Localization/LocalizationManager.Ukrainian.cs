@@ -12,22 +12,6 @@ public partial class LocalizationManager
             [nameof(SettingsTooltip)] = "Налаштування",
             [nameof(LastMessageSentTooltip)] = "Останнє повідомлення:",
             [nameof(TokenPlaceholderText)] = "Токен",
-            // Token instructions (personal account)
-            [nameof(TokenPersonalHeader)] = "Як отримати токен для персонального акаунту:",
-            [nameof(TokenPersonalTosWarning)] =
-                "**Ризик для облікового запису:** Discord забороняє автоматизацію звичайних облікових записів («self-bots») і попереджає, що такі облікові записи можуть бути заблоковані. Політика для розробників також забороняє збирати дані через сервіси Discord. Цей режим автоматизує звичайний обліковий запис для експорту повідомлень. Інтервали між запитами та HTTP/TLS-транспорт не роблять таке використання дозволеним і не гарантують безпеку облікового запису. Якщо потрібно уникнути обмежень або блокування облікового запису, не використовуйте цей режим. Ознайомтеся з [політикою Discord щодо self-bots](https://support.discord.com/hc/en-us/articles/115002192352-Automated-User-Accounts-Self-Bots) та [Політикою для розробників](https://support-dev.discord.com/hc/en-us/articles/8563934450327-Discord-Developer-Policy).",
-            [nameof(TokenPersonalInstructions)] = """
-                1. Відкрийте Discord у вашому веб-браузері та увійдіть
-                2. Відкрийте будь-який сервер або канал особистих повідомлень
-                3. Натисніть **Ctrl+Shift+I**, щоб відкрити інструменти розробника
-                4. Перейдіть на вкладку **Network**
-                5. Натисніть **Ctrl+R** для перезавантаження
-                6. Перемикайтеся між каналами, щоб викликати мережеві запити
-                7. Знайдіть запит, що починається з **messages**
-                8. Виберіть вкладку **Headers** праворуч
-                9. Прокрутіть до розділу **Request Headers**
-                10. Скопіюйте значення заголовка **authorization**
-                """,
             // Token instructions (bot)
             [nameof(TokenBotHeader)] = "Як отримати токен для бота:",
             [nameof(TokenBotInstructions)] = """
@@ -56,9 +40,9 @@ public partial class LocalizationManager
                 Зберігати останній використаний токен у файлі для збереження між сеансами.
                 **Увага**: хоча токен зберігається із шифруванням, він може бути відновлений зловмисником, який має доступ до вашої системи.
                 """,
-            [nameof(RateLimitPreferenceLabel)] = "Ліміт запитів",
+            [nameof(RateLimitPreferenceLabel)] = "Ліміти запитів",
             [nameof(RateLimitPreferenceTooltip)] =
-                "Чи дотримуватись рекомендованих лімітів запитів. Якщо вимкнено, будуть дотримуватись лише жорсткі ліміти (тобто відповіді 429).",
+                "Ліміти запитів Discord завжди дотримуються. Цей параметр не вимикає очікування.",
             [nameof(ShowThreadsLabel)] = "Показувати гілки",
             [nameof(ShowThreadsTooltip)] = "Які типи гілок показувати у списку каналів",
             [nameof(LocaleLabel)] = "Локаль",

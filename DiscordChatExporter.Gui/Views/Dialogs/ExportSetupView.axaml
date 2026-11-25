@@ -2,7 +2,6 @@
   x:Class="DiscordChatExporter.Gui.Views.Dialogs.ExportSetupView"
   xmlns="https://github.com/avaloniaui"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-  xmlns:asyncImageLoader="clr-namespace:AsyncImageLoader;assembly=AsyncImageLoader.Avalonia"
   xmlns:converters="clr-namespace:DiscordChatExporter.Gui.Converters"
   xmlns:dialogs="clr-namespace:DiscordChatExporter.Gui.ViewModels.Dialogs"
   xmlns:materialAssists="clr-namespace:Material.Styles.Assists;assembly=Material.Styles"
@@ -16,11 +15,12 @@
     <!--  Guild/channel info  -->
     <Grid Grid.Row="0" Margin="16" ColumnDefinitions="Auto,*">
       <!--  Guild icon  -->
-      <Ellipse Grid.Column="0" Width="32" Height="32">
-        <Ellipse.Fill>
-          <ImageBrush asyncImageLoader:ImageBrushLoader.Source="{Binding Guild.IconUrl}" />
-        </Ellipse.Fill>
-      </Ellipse>
+      <Ellipse
+        Grid.Column="0"
+        Width="32"
+        Height="32"
+        Fill="{DynamicResource MaterialDividerBrush}"
+      />
 
       <!--  Channel count (for multiple channels)  -->
       <TextBlock

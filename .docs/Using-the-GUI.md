@@ -1,140 +1,25 @@
 # Using the GUI
 
-> [!CAUTION]
-> Discord prohibits automating normal user accounts ("self-bots") and warns that accounts found doing so may be terminated. Its
-> Developer Policy also prohibits scraping data through Discord services. This app's personal-account mode automates a normal
-> account to export messages. Do not use it if you need to avoid account restrictions or termination. Low parallelism, request
-> pacing, and HTTP/TLS transport do not make this use permitted or protect accounts from enforcement. See Discord's [self-bot
-> policy](https://support.discord.com/hc/en-us/articles/115002192352-Automated-User-Accounts-Self-Bots) and [Developer
-> Policy](https://support-dev.discord.com/hc/en-us/articles/8563934450327-Discord-Developer-Policy).
+The GUI in this candidate build is for local conversion and archive search. Server discovery, live export, and Discord asset downloads are disabled.
 
-After a confirmed user-token HTTP 429, this fork stops the client and records a local block that also
-applies to future runs using the same token under the same OS user profile. See the [README
-request-handling notes](../Readme.md#discord-api-request-handling) for details and clearing instructions.
+## Convert local files
 
-## Video tutorial
+1. Start DiscordChatExporter and select **Conversion**.
+2. Select **Pick JSON files…** to add DiscordChatExporter JSON exports.
+3. Or select **Pick Data Package folder…** and choose the extracted package folder or its **Messages** folder. The app finds the package's message transcript files for batch conversion.
+4. Select an output folder and the formats to create.
+5. Select **Convert**. Per-file results appear on screen; existing files are protected by the overwrite confirmation.
 
-[![Video tutorial](https://i.ytimg.com/vi/jjtu0VQXV7I/hqdefault.jpg)](https://youtube.com/watch?v=jjtu0VQXV7I)
-
-> Video by [NoIntro Tutorials](https://youtube.com/channel/UCFezKSxdNKJe77-hYiuXu3Q).
-
-## Guide
-
-### Step 1
-
-After extracting the `.zip`, run `DiscordChatExporter.exe` **(Windows)**, or `DiscordChatExporter` **(Linux)**.
-
-If you're using **macOS**, you'll need to manually grant permission for the app to run.  
-If you skip these steps, the "DiscordChatExporter is damaged and can’t be opened" error will be shown.
-
-1. Open Terminal.app. You can search for it in Spotlight (press <kbd>⌘</kbd> + <kbd>Space</kbd> and type "Terminal").
-2. Paste the following into the terminal window:
-   ```bash
-   xattr -rd com.apple.quarantine
-   ```
-3. Hit <kbd>Space</kbd> once to add a space after the command
-4. Drag and drop DiscordChatExporter.app into the terminal window
-5. Press <kbd>Return</kbd> to run the command
-6. Open DiscordChatExporter.app normally
-
-> Apple requires apps to be notarized and signed in order to run on macOS without warnings, which in turn requires an Apple Developer membership ($99/year). This open-source project is distributed for free and without commercial intent.
-
-### Step 2
-
-Please refer to the on-screen instructions to get your token, then paste your token in the upper text box and hit ENTER or click the arrow (→).
-
-> [!WARNING]
-> **Never share your token!**
-> A token gives full access to an account, treat it like a password.
-
-<img src="https://i.imgur.com/SuLQ5tZ.png" height="400"/>
-
-### Step 3
-
-DCE will display your Direct Messages and a sidebar with your server list. Select the channel you would like to export, then click the ![Screenshot](https://i.imgur.com/dnTOlDa.png) button to continue.
-The top toolbar also includes buttons for the export Library and JSON conversion.
-
-> **Note**:
-> You can export multiple channels at once by holding `CTRL` or `SHIFT` while selecting.
-> You can also double-click a channel to export it without clicking the ![Screenshot](https://i.imgur.com/dnTOlDa.png) button.
-
-<img src="https://i.imgur.com/JHMFRh2.png" height="400"/>
-
-### Step 4
-
-In this screen you can customize the following:
-
-- **Output path** - The folder where the exported chat(s) will be saved.
-
-- **Export format** - HTML (Dark), HTML (Light), TXT, CSV, JSON and SQLite
-
-- **Date range (after/before)** (Optional) - If set, only messages sent in the provided date range will be exported. Only one value (either after or before) is required if you want to use this option.
-  > **Note**:
-  > Please note that the time defaults to **12:00 AM** (midnight/00:00). This means that if you choose to export between Sep 17th and Sep 18th, messages from Sep 18th won't be exported.
-
-- **Partition limit** (Optional) - Split output into partitions, each limited to this number of messages (e.g. 100) or file size (e.g. 10mb). For example, a channel with 36 messages set to be partitioned every 10 messages will output 4 files.
-
-- **Message Filter** (Optional) - Special notation for filtering the messages that get included in the export. See [Message filters](Message-filters.md) for more info.
-
-- **Format markdown** (Optional) - Disable markdown processing when exporting. You can use this to produce JSON or plain text exports without unwrapping mentions, custom emoji, and certain other special tokens.
-
-- **Download assets** (Optional) - If this option is set, the export will include additional files such as user avatars, attached files, images, etc. Only files that are referenced by the export are downloaded, which means that, for example, user avatars will not be downloaded when using the plain text (TXT) export format. A folder containing the assets will be created along with the exported chat. They must be kept together.
-
-- **Reuse assets** (Optional) - If this option is set, the export will reuse already downloaded assets to skip redundant requests. This option is only available when **Download assets** is enabled.
-
-- **Assets directory path** (Optional) - If this option is set, the export will use the specified directory to store assets from all exported channels in the same place.
-
-> **Note**:
-> You need to scroll down to see all available options.
-
-## Continue exports
-
-The continue button resumes selected channels from existing JSON, HTML, CSV, or SQLite exports.
-When the selected output folder contains a `manifest.json` catalog, DCE can match selected channels to existing exports automatically.
-If no matching catalog entry is found, DCE asks you to pick the existing export file.
-
-Continuing reverse-ordered or partitioned exports is not supported.
-CSV exports that were made with a `before` date range also cannot be continued safely; continue the original JSON or SQLite export instead.
+Supported output formats are HTML Dark, HTML Light, TXT, CSV, and SQLite. Conversion reads the selected local files; it does not sign in or fetch messages from Discord. Source attachment and image URLs may be preserved in output. The generated HTML blocks automatic remote loading; a browser follows visible external links only when deliberately selected.
 
 ## Library
 
-The Library view lists exports from the output folders that DCE has cataloged in `manifest.json`.
-Use **Scan folder** to add another export folder to the catalog.
-SQLite (`.db`) exports can also be searched from the Library; other formats are listed but are not searchable.
+Select **Library** to browse export folders already in the local catalog or scan another folder. SQLite exports can be searched across the catalog. This search uses local database files.
 
-## Convert JSON exports
+## Settings and updates
 
-The conversion view converts existing JSON exports to HTML, TXT, CSV, or SQLite without connecting to Discord.
-Select one or more JSON files, choose the target formats, and pick an output folder.
-DCE warns before overwriting existing converted files.
+Settings apply to the local app and output formatting. Automatic update checks are disabled in this candidate, and the update control is hidden. This build does not check for or download application updates.
 
-## Settings
+## Unsupported in this build
 
-- **Auto-update** - Perform automatic updates on every launch.
-Default: Enabled
-
-  > **Note**:
-  > Keep this option enabled to receive the latest features and bug fixes!
-
-- **Dark mode** - Use darker colors in the UI (User Interface).
-Default: Disabled
-
-- **Persist token** - Persist last used token between sessions.
-Default: Enabled
-
-- **Show threads** - Controls whether threads are shown in the channel list.
-Default: none
-
-- **Locale** - Customize how dates are formatted in the exported files.
-
-- **Date format** - Customize how dates are formatted in the exported files in the settings menu ().
-
-- **Parallel limit** - The number of channels that will be exported at the same time.
-Default: 1
-
-  > **Note**:
-  > This setting controls export concurrency. Lower values reduce simultaneous channel work, but do not make personal-account
-  > automation permitted or protect accounts from enforcement.
-
-- **Normalize to UTC** - Convert all dates to UTC before exporting.
-
+The GUI does not accept a Discord token or retrieve server/channel history. A Discord Data Package transcript contains only messages sent by the account that requested it and is not a full conversation archive. The account-risk milestone remains unresolved; this build must not be described as a zero-risk full-history exporter.

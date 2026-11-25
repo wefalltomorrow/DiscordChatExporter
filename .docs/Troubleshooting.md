@@ -1,171 +1,25 @@
 # Troubleshooting
 
-## Connection diagnostics
+## The app has no server list or export button
 
-In the GUI, select the information button beside Settings, then **COPY** to copy the connection summary. In the CLI, add `--diagnostics` to an online command. The CLI writes a startup snapshot to standard error and another snapshot when the command finishes, fails, or is cancelled, including failures during channel discovery.
+That is expected in this offline-only candidate. Live Discord access and server/channel export commands are disabled. Use **Conversion** for local JSON files and the **Library** for local archives.
 
-The summary includes the build version, operating system, architecture, resolved token kind, selected transport, initialization/fallback reason, last attempted request transport, last HTTP response status, and request totals. Opening diagnostics sends no extra requests. It excludes tokens, request headers, channel IDs, URLs, and message content. Counts cover the lifetime of the client; the last response may belong to an earlier request if the latest attempt failed before receiving a response.
+## A JSON file is rejected
 
-HttpCloak is enabled only on Windows. Other platforms, an explicit `DISCORDCHATEXPORTER_DISABLE_BROWSER_TRANSPORT` override, or a native initialization failure use HttpClient. Bot requests also use HttpClient. A startup snapshot shows the configured user-token transport until token detection completes; the last attempted request field records the transport actually used. These diagnostics do not establish why an account was flagged or guarantee protection from detection.
+The input must be a DiscordChatExporter JSON export or a supported Data Package message transcript. Select an individual transcript file in the CLI. In the GUI, select JSON files or the extracted Data Package folder. Confirm the ZIP has been extracted before importing.
 
-When reporting a problem, include the summary, the operation being performed, approximately how long it ran, and the exact error or account action observed.
+## The Data Package import finds no transcripts
 
-Optional linked-channel lookups tolerate inaccessible channels (403/404). Required channel access and authentication failures still report errors. JSON exports retain reaction emoji and counts when the reactor list is unavailable due to a missing emoji (404 or error 10014); the unavailable users cannot be included.
+Select the extracted package root or its **Messages** folder. The importer needs the package's message transcript files and channel metadata (or channel IDs in the transcript folder names).
 
-Welcome to the Frequently Asked Questions (FAQ) and Troubleshooting page!
-Here you'll find the answers to most of the questions related to **DiscordChatExporter** (DCE for short) and its core features.
+## Images or attachments do not appear
 
-- ❓ If you still have unanswered questions _after_ reading this page, feel free to [create a new discussion](https://github.com/Tyrrrz/DiscordChatExporter/discussions/new).
-- 🐞 If you have encountered a problem that's not described here, has not [been discussed before](https://github.com/Tyrrrz/DiscordChatExporter/discussions), and is not a [known issue](https://github.com/Tyrrrz/DiscordChatExporter/issues?q=is%3Aissue), please [create a new discussion](https://github.com/Tyrrrz/DiscordChatExporter/discussions/new) or [open a bug report](https://github.com/Tyrrrz/DiscordChatExporter/issues/new). Don't forget to include your platform (Windows, Mac, Linux, etc.) and a detailed description of your question/problem.
+Conversion does not download assets. Generated HTML blocks automatic external resource loading, so remote images and media appear only when local files are available. Visible external links can be opened by deliberately selecting them.
 
-## General questions
+## The output cannot be written
 
-### Token stealer?
+Choose an output directory where the app can write and ensure the target file is not locked by another application.
 
-No. That's why this kind of software needs to be open-source, so the code can be audited by anyone.
-Your token is only used to connect to Discord's API, it's not sent anywhere else.
-If you're using the GUI, be aware that your token will be saved to a plain text file unless you disable it in the settings menu.
+## Account-risk milestone
 
-### Why should I be worried about the safety of my token?
-
-A token can be used to log into your account, so treat it like a password and never share it.
-
-### How can I reset my token?
-
-Follow the [instructions here](Token-and-IDs.md).
-
-### Can user-token exports lead to account enforcement?
-
-Discord prohibits automating normal user accounts ("self-bots") and warns that accounts found doing so may be terminated. This fork's user-token mode automates a normal account, so using it may lead to account restrictions or termination. Request pacing and transport choices do not make this use permitted or guarantee protection from enforcement. Do not use user-token mode if avoiding account enforcement is important. See Discord's [self-bot policy](https://support.discord.com/hc/en-us/articles/115002192352-Automated-User-Accounts-Self-Bots) and [Developer Policy](https://support-dev.discord.com/hc/en-us/articles/8563934450327-Discord-Developer-Policy).
-
-### Will the messages disappear from the exported file if I delete a message, delete my account or block a person?
-
-Text messages will not be removed from the exported file, but if media, such as images and user avatars, is changed or deleted, it will no longer be displayed. To avoid this, export using the "Download media" (`--media`) option.
-
-### Can DCE export messages that have already been deleted?
-
-No, DCE cannot access them since they have been permanently deleted from Discord's servers.
-
-### Can DCE export private chats?
-
-Yes, if your account has access to them.
-
-### Can DCE download images?
-
-Yes, and other media too. Export using the "Download media" (`--media`) option.
-
-### Can the exported chats be shared?
-
-Yes.
-
-### Can DCE export multiple formats at once?
-
-No, you can only export one format at a time.
-
-### Can DCE recreate the exported chats in Discord?
-
-No, DCE is an exporter.
-
-### Can DCE reupload exported messages to another channel?
-
-No, DCE is an exporter.
-
-### Can DCE add new messages to an existing export?
-
-No.
-
-## First steps
-
-### How can I find my token?
-
-Check the following page: [Obtaining token](Token-and-IDs.md)
-
-### When I open DCE a black window pops up quickly or nothing shows up
-
-You might have downloaded the CLI flavor of the app, which is meant to be run in a terminal. Try [downloading the GUI](Getting-started.md#gui-or-cli) instead if that's what you want.
-
-### How can I set DCE to export automatically at certain times?
-
-Check the following pages to learn how to schedule **DiscordChatExporter.CLI** runs (advanced):
-
-- [Windows scheduling](Scheduling-Windows.md)
-- [macOS scheduling](Scheduling-MacOS.md)
-- [Linux scheduling](Scheduling-Linux.md)
-
-### The exported file is too large, I can't open it
-
-Try opening it with a different program, try partitioning or use a different file format, like `PlainText`.
-
-### I see messages in the export, but they have no content
-
-Your bot is missing the 'Message Content Intent'. Go to the [Discord Developer Portal](https://discord.com/developers/applications), navigate to the 'Bot' section and enable it.
-
-## CLI
-
-### How do I use the CLI?
-
-Check the following page:
-
-- [Using the CLI](Using-the-CLI.md)
-
-If you're using **Docker**, please refer to the [Docker Usage Instructions](Docker.md) instead.
-
-### Where can I find the 'Channel IDs'?
-
-Check the following page:
-
-- [Obtaining Channel IDs](Token-and-IDs.md)
-
-### I can't find Docker exported chats
-
-Check the following page:
-
-- [Docker usage instructions](Docker.md)
-
-### I can't export Direct Messages
-
-Make sure you're [copying the DM Channel ID](Token-and-IDs.md#how-to-get-a-direct-message-channel-id), not the person's user ID.
-
-## Errors
-
-```yml
-DiscordChatExporter.Domain.Exceptions.DiscordChatExporterException: Authentication token is invalid.
-```
-
-↳ Make sure the provided token is correct.
-
-```yml
-DiscordChatExporter.Domain.Exceptions.DiscordChatExporterException: Requested resource does not exist.
-```
-
-↳ Check your channel ID, it might be invalid. [Read this if you need help](Token-and-IDs.md).
-
-```yml
-DiscordChatExporter.Domain.Exceptions.DiscordChatExporterException: Access is forbidden.
-```
-
-↳ This means you don't have access to the channel.
-
-```yml
-System.Net.WebException: Error: TrustFailure ... Invalid certificate received from server.
-```
-
-↳ Try running cert-sync.
-
-Debian/Ubuntu: `cert-sync /etc/ssl/certs/ca-certificates.crt`
-
-Red Hat: `cert-sync --user /etc/pki/tls/certs/ca-bundle.crt`
-
-If it still doesn't work, try mozroots: `mozroots --import --ask-remove`
-
-## macOS-specific
-
-### DiscordChatExporter is damaged and can’t be opened. You should move it to the Trash.
-
-Check the [Using the GUI page](Using-the-GUI.md#step-1) for instructions on how to run the app.
-
----
-
-> ❓ If you still have unanswered questions, feel free to [create a new discussion](https://github.com/Tyrrrz/DiscordChatExporter/discussions/new).
->
-> 🐞 If you have encountered a problem that's not described here, has not [been discussed before](https://github.com/Tyrrrz/DiscordChatExporter/discussions), and is not a [known issue](https://github.com/Tyrrrz/DiscordChatExporter/issues?q=is%3Aissue), please [create a new discussion](https://github.com/Tyrrrz/DiscordChatExporter/discussions/new) or [open a bug report](https://github.com/Tyrrrz/DiscordChatExporter/issues/new).
+This source revision blocks Discord requests initiated by the exporter. It does not establish zero suspension risk, change earlier published binaries, or meet the full-history use case for channels the app cannot access. See [release readiness](../docs/ReleaseReadiness.md).

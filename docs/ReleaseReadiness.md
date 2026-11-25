@@ -1,19 +1,18 @@
 # Release validation
 
-The `main` workflow validates PRs targeting `prime` or `integration/**`. Its offline test matrix covers Windows, Linux and macOS. The fork release workflow uses the same CLI test selection and also runs the GUI and resilient-wrapper tests on all three systems. CLI packages from both workflows include `Export-Guild-Resilient.ps1`.
+This checkout is a local archive conversion candidate. Its Discord API/CDN client rejects outbound requests, automatic updates are disabled, the GUI hides Discord connection and export actions, and the CLI registers only local convert and guide commands. HTML conversion adds a Content Security Policy that blocks automatic external resource loads while allowing local archive assets. A browser can still open a visible external link if the user deliberately selects it.
 
-For validation of a branch, dispatch `main.yml` with `run_live_tests: false` (the default). This runs formatting, offline tests and the packaging matrix. Manual dispatch does not publish a release, including when a tag is selected. The separate `live-test` job can access Discord only when explicitly requested through `run_live_tests: true`; merely configuring a token does not enable it. Live tests are not required for release validation.
+The main workflow runs on pull requests to prime or integration branches, pushes to prime, and tag pushes. Non-draft PRs and direct branch or tag builds run formatting, token-free CLI tests, GUI tests, and the cross-platform package matrix. Draft PRs skip packaging. The release workflow runs on pushes to release branches. Both workflows create GitHub releases automatically for their configured publishing refs; neither has a manual dispatch trigger.
 
-Before publishing:
+Before publishing a candidate:
 
-1. Obtain successful formatting, offline tests and all 18 packaging jobs for the exact candidate commit. Draft PRs skip packaging, so use an offline manual dispatch for the complete matrix.
-2. Review changes and verify package contents, including License.txt, NOTICE and the CLI wrapper.
-3. Verify the release version and notes. Publish only after the validation gate passes. The existing tag-push and `release/**` branch workflows can publish automatically; use an integration or fix branch for validation work.
+1. Obtain successful formatting, CLI and GUI tests, and all 18 package jobs for the exact commit. Do not treat local checks as a substitute for Linux and macOS CI.
+2. Inspect the packaged CLI and GUI contents and verify License.txt and NOTICE are present.
+3. Verify the tag, release notes, source revision, and assets together. The release workflows read docs/Offline-Only-Release-Notes.md; editing release text alone does not rebuild existing assets.
+4. Keep the account-risk milestone unresolved unless a permitted solution also satisfies the requested full-history use case.
 
-For every published fork release, audit the description for the policy warning and the explicit statement that no credible evidence establishes suspension prevention. Editing a release description does not rebuild or replace its assets; verify the tag and asset provenance separately.
+## Account-risk milestone status
 
-Local Windows checks are useful evidence but do not replace native Linux/macOS validation. Offline success does not establish prevention of Discord detection or suspension. Do not label a candidate as safe or undetectable based on these tests.
+As of November 26, 2026, the milestone is unresolved. The candidate removes Discord API and CDN requests initiated by the application, disables automatic updates, and prevents automatic remote resource loading in generated HTML. It does not provide live history retrieval, and it cannot guarantee that an account will never face enforcement for other activity or for earlier builds. Existing published binaries keep their original behavior; specifically, the latest published 2.48.0-wft.4 release still includes live Discord access.
 
-Discord prohibits automating normal user accounts (self-bots), warns that accounts found doing so may be terminated, and bars scraping in its Developer Policy. There is no credible evidence that this project prevents account suspension or other enforcement, and no such protection is claimed. A first-429 stop is only a fail-closed response to a rate-limit signal; it does not make user-token automation permitted or establish account safety. Do not claim that this project or any release prevents or minimizes suspension risk while user-token automation remains available.
-
-If GitHub rejects workflow dispatch with `Actions has been disabled for this repository`, preserve the response and keep the candidate unmerged and unreleased until execution is restored. An API response showing repository Actions permissions enabled does not establish that jobs can run.
+The required use case is full-history export from servers where a bot cannot be added. Discord Data Package transcripts contain only messages authored by the requesting account, so they cannot meet that requirement. Discord's self-bot guidance prohibits automating normal user accounts; its Developer Policy and Terms of Service also restrict scraping through Discord services. The candidate therefore offers local conversion of data already obtained through a permitted source; it does not claim to make unauthorized collection safe or to prevent suspension. See Discord's [self-bot guidance](https://support.discord.com/hc/en-us/articles/115002192352-Automated-User-Accounts-Self-Bots), [Developer Policy](https://support-dev.discord.com/hc/en-us/articles/8563934450327-Discord-Developer-Policy), [Data Package guide](https://support.discord.com/hc/en-us/articles/360004957991-Your-Discord-Data-Package), and [Terms of Service](https://discord.com/terms).

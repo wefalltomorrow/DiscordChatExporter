@@ -79,6 +79,7 @@ public partial class LocalizationManager
     public string ExportedThroughFormat => Get();
     public string ChannelProgressFormat => Get();
     public string RateLimitPauseFormat => Get();
+    public string DiscordOfflineModeNotice => Get();
     public string ExportCatalogWriteFailedMessage => Get();
     public string ExportSummaryMessage => Get();
     public string ExportSummaryFailedSuffix => Get();
@@ -109,14 +110,10 @@ public partial class LocalizationManager
     public string LastMessageSentTooltip => Get();
     public string TokenPlaceholderText => Get();
 
-    // Token instructions (personal account)
-    public string TokenPersonalHeader => Get();
-    public string TokenPersonalTosWarning => Get();
-    public string TokenPersonalInstructions => Get();
-
     // Token instructions (bot)
     public string TokenBotHeader => Get();
     public string TokenBotInstructions => Get();
+    public string TokenBotPolicyWarning => Get();
     public string TokenHelpText => Get();
 
     // ---- Library ----
@@ -135,6 +132,8 @@ public partial class LocalizationManager
     public string ConversionBackButtonText => Get();
     public string ConversionDescription => Get();
     public string ConversionPickFilesButtonText => Get();
+    public string ConversionPickDataPackageButtonText => Get();
+    public string ConversionNoDataPackageTranscriptsMessage => Get();
     public string ConversionPickOutputFolderButtonText => Get();
     public string ConversionConvertButtonText => Get();
     public string ConversionSourcesHeader => Get();

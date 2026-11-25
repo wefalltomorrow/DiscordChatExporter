@@ -31,9 +31,6 @@ public partial class SettingsService : SettingsBase
     public partial bool IsAutoUpdateEnabled { get; set; } = true;
 
     [ObservableProperty]
-    public partial bool IsTokenPersisted { get; set; } = true;
-
-    [ObservableProperty]
     public partial RateLimitPreference RateLimitPreference { get; set; } =
         RateLimitPreference.RespectAll;
 
@@ -82,19 +79,23 @@ public partial class SettingsService : SettingsBase
 
     public override void Save()
     {
-        // Clear the token if it's not supposed to be persisted
-        var lastToken = LastToken;
-        if (!IsTokenPersisted)
-            LastToken = null;
+        // Never write an authentication token into settings in this offline-only build.
+        LastToken = null;
+        base.Save();
+    }
 
-        try
+    public override bool Load()
+    {
+        var loaded = base.Load();
+
+        // Remove tokens left by older online builds after settings have been deserialized.
+        if (!string.IsNullOrWhiteSpace(LastToken))
         {
-            base.Save();
+            LastToken = null;
+            Save();
         }
-        finally
-        {
-            LastToken = lastToken;
-        }
+
+        return loaded;
     }
 }
 

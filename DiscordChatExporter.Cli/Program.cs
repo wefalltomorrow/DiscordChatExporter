@@ -7,7 +7,8 @@ public static class Program
 {
     public static async Task<int> Main(string[] args) =>
         await new CommandLineApplicationBuilder()
-            .AddCommandsFromThisAssembly()
+            .AddCommand(Commands.ConvertCommand.Descriptor)
+            .AddCommand(Commands.GuideCommand.Descriptor)
             .Build()
             .RunAsync(args);
 }

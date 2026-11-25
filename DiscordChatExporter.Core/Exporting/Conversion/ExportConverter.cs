@@ -30,7 +30,7 @@ public static class ExportConverter
         if (targetFormat is ExportFormat.Json)
             throw new InvalidExportException("JSON is not a supported conversion target.");
 
-        var parsed = await JsonExportReader.ParseAsync(jsonFilePath, cancellationToken);
+        var parsed = await OfflineExportReader.ParseAsync(jsonFilePath, cancellationToken);
         return await ConvertAsync(
             parsed,
             jsonFilePath,

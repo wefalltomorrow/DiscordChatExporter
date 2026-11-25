@@ -7,7 +7,6 @@
     <PackageReference Include="AsyncKeyedLock" />
     <PackageReference Include="CSharpier.MsBuild" PrivateAssets="all" />
     <PackageReference Include="Gress" />
-    <PackageReference Include="HttpCloak" />
     <PackageReference Include="JsonExtensions" />
     <PackageReference Include="Microsoft.Data.Sqlite" />
     <PackageReference Include="Polly" />

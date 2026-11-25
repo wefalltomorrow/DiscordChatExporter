@@ -48,6 +48,20 @@ public sealed class ExportContextAssetSpecs : IDisposable
         ) => handleAsync(request, cancellationToken);
     }
 
+    [Fact]
+    public async Task Default_asset_downloader_rejects_discord_cdn_requests()
+    {
+        var downloader = new ExportAssetDownloader(_dir, reuse: false);
+
+        var act = async () =>
+            await downloader.DownloadAsync("https://cdn.discordapp.com/attachments/1/2/asset.png");
+
+        await act.Should()
+            .ThrowAsync<HttpRequestException>()
+            .WithMessage("Discord network access is disabled in this build.");
+        Directory.GetFiles(_dir).Should().BeEmpty();
+    }
+
     private ExportContext CreateHtmlContext(
         bool shouldDownloadAssets,
         string? assetsDirPath = null,
