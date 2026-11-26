@@ -18,6 +18,8 @@ Discord Data Package transcripts include only messages authored by the account t
 
 **Account-risk milestone status: unresolved.** This change removes Discord requests initiated by this build. It does not prove that suspension risk is zero, address earlier use of other builds, or provide full-history retrieval for the stated use case. Existing published binaries keep their original behavior; these changes apply only to a build made from this source revision.
 
+Discord's [self-bot guidance](https://support.discord.com/hc/en-us/articles/115002192352-Automated-User-Accounts-Self-Bots) prohibits automating normal user accounts, and its [Developer Policy](https://support-dev.discord.com/hc/en-us/articles/8563934450327-Discord-Developer-Policy) restricts scraping through Discord services. The offline converter does not provide a way to collect full history or make earlier live collection compliant.
+
 The latest published release, [2.48.0-wft.4](https://github.com/wefalltomorrow/DiscordChatExporter/releases/tag/2.48.0-wft.4), predates these changes and still contains live Discord access. This source candidate disables automatic updates so it cannot replace itself with that older behavior.
 
 ## GUI
