@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Threading.Tasks;
 using DiscordChatExporter.Core.Discord;
 using DiscordChatExporter.Core.Discord.Data;
 using DiscordChatExporter.Core.Exporting;
@@ -13,7 +14,7 @@ namespace DiscordChatExporter.Cli.Tests.Specs.Conversion;
 
 public sealed class ExportContextSeedSpecs
 {
-    private static ExportContext CreateContext()
+    private static ExportContext CreateContext(bool isOffline = false)
     {
         var outputPath = Path.Combine(Path.GetTempPath(), "conversion-seed.json");
         var guild = new Guild(new Snowflake(1), "Test Guild", "");
@@ -46,7 +47,26 @@ public sealed class ExportContextSeedSpecs
             locale: "en-US",
             isUtcNormalizationEnabled: true
         );
-        return new ExportContext(new DiscordClient("fake-token"), request);
+        return new ExportContext(
+            isOffline ? null : new DiscordClient("fake-token"),
+            request,
+            isOffline
+        );
+    }
+
+    [Fact]
+    public async Task Offline_context_populates_local_data_without_a_discord_client()
+    {
+        var context = CreateContext(isOffline: true);
+        var user = new User(new Snowflake(10), false, null, "alice", "alice", "");
+
+        context.Discord.Should().BeNull();
+        await context.PopulateChannelsAndRolesAsync();
+        await context.PopulateChannelAsync(new Snowflake(30));
+        await context.PopulateMemberAsync(user);
+
+        context.TryGetChannel(new Snowflake(30)).Should().BeNull();
+        context.TryGetMember(new Snowflake(10))!.User.Should().Be(user);
     }
 
     [Fact]

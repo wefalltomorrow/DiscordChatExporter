@@ -584,7 +584,7 @@
                             if (Context.IsOffline)
                                 continue;
 
-                            var invite = await Context.Discord.TryGetInviteAsync(inviteCode, CancellationToken);
+                            var invite = await Context.Discord!.TryGetInviteAsync(inviteCode, CancellationToken);
                             if (invite is null)
                             {
                                 continue;
