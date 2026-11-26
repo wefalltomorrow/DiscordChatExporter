@@ -154,6 +154,8 @@ DiscordChatExporter.Domain.Exceptions.DiscordChatExporterException: Access is fo
 
 ↳ This means you don't have access to the channel.
 
+If the forbidden response comes from a channel that a message links to, the export continues. Mentions of channels you cannot read are written as `#deleted-channel`, and a thread starter whose parent channel is inaccessible is skipped so the rest of the thread still exports.
+
 ```yml
 System.Net.WebException: Error: TrustFailure ... Invalid certificate received from server.
 ```
