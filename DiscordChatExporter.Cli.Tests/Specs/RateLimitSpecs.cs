@@ -472,7 +472,7 @@ public partial class RateLimitSpecs
     [InlineData(HttpStatusCode.BadRequest, "{\"code\":10014}", true)]
     [InlineData(HttpStatusCode.NotFound, "", true)]
     [InlineData(HttpStatusCode.BadRequest, "{\"code\":50035}", false)]
-    [InlineData(HttpStatusCode.BadRequest, "{\"code\":\"10014\"}", false)]
+    [InlineData(HttpStatusCode.BadRequest, "{\"code\":\"10014\"}", true)]
     [InlineData(HttpStatusCode.BadRequest, "not json", false)]
     [InlineData(HttpStatusCode.Unauthorized, "{\"code\":10014}", false)]
     [InlineData(HttpStatusCode.Forbidden, "{\"code\":10014}", false)]
