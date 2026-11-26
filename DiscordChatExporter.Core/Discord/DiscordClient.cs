@@ -1554,7 +1554,11 @@ public class DiscordClient(
             .SetQueryParameter("limit", "1")
             .Build();
 
-        var response = await TryGetJsonResponseAsync(url, cancellationToken);
+        // Thread starter messages point at their original message in the parent channel,
+        // which may no longer be accessible to the current account. Treat that the same
+        // as a deleted message so an inaccessible reference cannot abort the export.
+        // https://github.com/wefalltomorrow/DiscordChatExporter/issues/19
+        var response = await TryGetJsonResponseAsync(url, cancellationToken, allowForbidden: true);
         if (response is null)
             return null;
 
