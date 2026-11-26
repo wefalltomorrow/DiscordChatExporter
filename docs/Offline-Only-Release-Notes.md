@@ -6,7 +6,7 @@ This release converts DiscordChatExporter JSON archives and extracted Discord Da
 
 - Convert local transcripts to HTML Dark, HTML Light, Plain Text, CSV, or SQLite.
 - Batch-convert files from the GUI and browse or search local SQLite archives in the Library.
-- Block Discord API/CDN requests from this build and disable automatic update checks.
+- Block Discord API/CDN requests from this build and remove the automatic updater and its network dependency.
 - Block automatic remote-resource loading in generated HTML; visible external links can still be opened deliberately.
 
 ## Data Package limitation

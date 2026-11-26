@@ -45,7 +45,6 @@ public sealed class LibraryViewRenderTests
 
         // Services
         services.AddSingleton(TestSettingsServiceFactory.Create());
-        services.AddSingleton<UpdateService>();
 
         // Localization
         services.AddSingleton<LocalizationManager>();

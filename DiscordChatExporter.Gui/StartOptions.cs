@@ -7,7 +7,6 @@ public partial class StartOptions
 {
     public required string SettingsPath { get; init; }
 
-    public required bool IsAutoUpdateAllowed { get; init; }
 }
 
 public partial class StartOptions
@@ -26,9 +25,6 @@ public partial class StartOptions
                 AppContext.BaseDirectory,
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)
             ),
-            // This candidate must not update itself to a previously published build that still
-            // has live Discord access.
-            IsAutoUpdateAllowed = false,
         };
 
     internal static string ResolveSettingsPath(

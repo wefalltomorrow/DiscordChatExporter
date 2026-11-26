@@ -13,25 +13,19 @@ public partial class MainViewModel : ViewModelBase
 {
     private readonly ViewModelManager viewModelManager;
     private readonly DialogManager dialogManager;
-    private readonly SnackbarManager snackbarManager;
     private readonly SettingsService settingsService;
-    private readonly UpdateService updateService;
     private readonly LocalizationManager localizationManager;
 
     public MainViewModel(
         ViewModelManager viewModelManager,
         DialogManager dialogManager,
-        SnackbarManager snackbarManager,
         SettingsService settingsService,
-        UpdateService updateService,
         LocalizationManager localizationManager
     )
     {
         this.viewModelManager = viewModelManager;
         this.dialogManager = dialogManager;
-        this.snackbarManager = snackbarManager;
         this.settingsService = settingsService;
-        this.updateService = updateService;
         this.localizationManager = localizationManager;
 
         Dashboard = viewModelManager.GetDashboardViewModel();
@@ -88,51 +82,10 @@ public partial class MainViewModel : ViewModelBase
             Process.StartShellExecute("https://tyrrrz.me/ukraine?source=discordchatexporter");
     }
 
-    private async Task CheckForUpdatesAsync()
-    {
-        try
-        {
-            var updateVersion = await updateService.CheckForUpdatesAsync();
-            if (updateVersion is null)
-                return;
-
-            snackbarManager.Notify(
-                string.Format(
-                    localizationManager.UpdateDownloadingMessage,
-                    Program.Name,
-                    updateVersion
-                )
-            );
-            if (!await updateService.PrepareUpdateAsync(updateVersion))
-            {
-                snackbarManager.Notify(localizationManager.UpdateFailedMessage);
-                return;
-            }
-
-            snackbarManager.Notify(
-                localizationManager.UpdateReadyMessage,
-                localizationManager.UpdateInstallNowButton,
-                () =>
-                {
-                    if (updateService.FinalizeUpdate(true))
-                        App.Shutdown(2);
-                    else
-                        snackbarManager.Notify(localizationManager.UpdateFailedMessage);
-                }
-            );
-        }
-        catch
-        {
-            // Failure to update shouldn't crash the application
-            snackbarManager.Notify(localizationManager.UpdateFailedMessage);
-        }
-    }
-
     public override async Task InitializeAsync()
     {
-        // Navigation is wired in the constructor; only the async startup prompts remain here.
+        // Navigation is wired in the constructor; only the optional support prompt remains here.
         await ShowUkraineSupportMessageAsync();
-        await CheckForUpdatesAsync();
     }
 
     protected override void Dispose(bool disposing)
@@ -142,8 +95,6 @@ public partial class MainViewModel : ViewModelBase
             // Save settings
             settingsService.Save();
 
-            // Finalize pending updates
-            updateService.FinalizeUpdate(false);
         }
 
         base.Dispose(disposing);

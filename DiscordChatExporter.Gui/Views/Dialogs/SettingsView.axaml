@@ -49,16 +49,6 @@
             />
           </DockPanel>
 
-          <!--  Auto-updates  -->
-          <DockPanel
-            IsVisible="{Binding IsAutoUpdateAvailable}"
-            LastChildFill="False"
-            ToolTip.Tip="{Binding LocalizationManager.AutoUpdateTooltip}"
-          >
-            <TextBlock DockPanel.Dock="Left" Text="{Binding LocalizationManager.AutoUpdateLabel}" />
-            <ToggleSwitch DockPanel.Dock="Right" IsChecked="{Binding IsAutoUpdateEnabled}" />
-          </DockPanel>
-
           <!--  Thread inclusion mode  -->
           <DockPanel
             LastChildFill="False"

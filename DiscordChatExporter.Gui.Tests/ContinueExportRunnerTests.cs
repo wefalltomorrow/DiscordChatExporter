@@ -47,7 +47,6 @@ public sealed class ContinueExportRunnerTests
         services.AddSingleton<ViewManager>();
         services.AddSingleton<ViewModelManager>();
         services.AddSingleton(TestSettingsServiceFactory.Create());
-        services.AddSingleton<UpdateService>();
         services.AddSingleton<LocalizationManager>();
         services.AddTransient<MainViewModel>();
         services.AddTransient<DashboardViewModel>();

@@ -8,12 +8,6 @@ namespace DiscordChatExporter.Gui.Tests;
 public sealed class StartOptionsTests
 {
     [Fact]
-    public void Automatic_updates_are_disabled_for_the_offline_candidate()
-    {
-        StartOptions.Current.IsAutoUpdateAllowed.Should().BeFalse();
-    }
-
-    [Fact]
     public void Default_settings_path_uses_per_user_appdata()
     {
         // Build paths with Path.Combine so the test asserts the resolution logic, not a particular

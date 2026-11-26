@@ -39,7 +39,6 @@ public partial class App : Application, IDisposable
 
         // Services
         services.AddSingleton<SettingsService>();
-        services.AddSingleton<UpdateService>();
 
         // Localization
         services.AddSingleton<LocalizationManager>();

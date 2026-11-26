@@ -12,7 +12,7 @@ This fork is being changed to an offline-only archive converter. The candidate b
 - Convert DiscordChatExporter JSON exports and extracted Discord Data Package message transcripts to HTML Dark, HTML Light, Plain Text, CSV, or SQLite.
 - Batch-convert files from the GUI and browse or search local SQLite archives in the Library.
 - Use the CLI for single-file conversion.
-- Discord API and CDN requests are disabled, automatic updates are off, and the CLI exposes only local convert and guide commands.
+- Discord API and CDN requests are disabled, the updater and its network dependency are removed, and the CLI exposes only local convert and guide commands.
 
 Discord Data Package transcripts include only messages authored by the account that requested the package. They do not provide a complete two-sided conversation history. This candidate therefore does not meet the full-history use case for channels where a bot cannot be added.
 

@@ -47,15 +47,6 @@ public class SettingsViewModel : DialogViewModelBase
         set => _settingsService.Language = value;
     }
 
-    public bool IsAutoUpdateAvailable { get; } =
-        OperatingSystem.IsWindows() && StartOptions.Current.IsAutoUpdateAllowed;
-
-    public bool IsAutoUpdateEnabled
-    {
-        get => _settingsService.IsAutoUpdateEnabled;
-        set => _settingsService.IsAutoUpdateEnabled = value;
-    }
-
     public IReadOnlyList<RateLimitPreference> AvailableRateLimitPreferences { get; } =
     [RateLimitPreference.RespectForBotTokens];
 

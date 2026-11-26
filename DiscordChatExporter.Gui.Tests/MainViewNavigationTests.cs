@@ -31,7 +31,6 @@ public sealed class MainViewNavigationTests
 
         // Services
         services.AddSingleton(TestSettingsServiceFactory.Create());
-        services.AddSingleton<UpdateService>();
 
         // Localization
         services.AddSingleton<LocalizationManager>();

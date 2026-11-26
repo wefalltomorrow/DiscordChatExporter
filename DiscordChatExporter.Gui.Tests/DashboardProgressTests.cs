@@ -30,7 +30,6 @@ public sealed class DashboardProgressTests
         services.AddSingleton<ViewModelManager>();
 
         services.AddSingleton(TestSettingsServiceFactory.Create());
-        services.AddSingleton<UpdateService>();
 
         services.AddSingleton<LocalizationManager>();
 

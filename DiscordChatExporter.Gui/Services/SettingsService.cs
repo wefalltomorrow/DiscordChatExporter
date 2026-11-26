@@ -28,9 +28,6 @@ public partial class SettingsService : SettingsBase
     public partial Language Language { get; set; }
 
     [ObservableProperty]
-    public partial bool IsAutoUpdateEnabled { get; set; } = true;
-
-    [ObservableProperty]
     public partial RateLimitPreference RateLimitPreference { get; set; } =
         RateLimitPreference.RespectAll;
 
