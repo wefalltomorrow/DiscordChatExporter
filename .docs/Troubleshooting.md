@@ -134,6 +134,8 @@ DiscordChatExporter.Domain.Exceptions.DiscordChatExporterException: Authenticati
 
 ↳ Make sure the provided token is correct.
 
+If the same token worked earlier in the run and then started failing, the client reports an HTTP 401 stop instead. It stops and blocks that token locally across restarts. A rejection at that point can mean the session was revoked, the password was changed, or the account was restricted. Check the account's standing in Discord before using the token again. On Windows, the local marker lives under %LOCALAPPDATA%\DiscordChatExporter\UserTokenRequestStops.
+
 ```yml
 DiscordChatExporter.Domain.Exceptions.DiscordChatExporterException: Requested resource does not exist.
 ```

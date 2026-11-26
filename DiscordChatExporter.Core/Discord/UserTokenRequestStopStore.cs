@@ -7,6 +7,9 @@ namespace DiscordChatExporter.Core.Discord;
 
 internal sealed class UserTokenRequestStopStore(string directoryPath)
 {
+    private const string LegacyRateLimitStopReason =
+        "A previous HTTP 429 for this user token was recorded locally. The token remains blocked across restarts.";
+
     private readonly string _directoryPath = directoryPath;
 
     internal static UserTokenRequestStopStore CreateDefault()
@@ -27,8 +30,11 @@ internal sealed class UserTokenRequestStopStore(string directoryPath)
         try
         {
             using var marker = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-            reason =
-                "A previous HTTP 429 for this user token was recorded locally. The token remains blocked across restarts.";
+            using var reader = new StreamReader(marker);
+            var recordedReason = reader.ReadToEnd().Trim();
+
+            // Markers written before the reason was recorded are empty files.
+            reason = recordedReason.Length > 0 ? recordedReason : LegacyRateLimitStopReason;
             return true;
         }
         catch (FileNotFoundException)
@@ -49,7 +55,7 @@ internal sealed class UserTokenRequestStopStore(string directoryPath)
         }
     }
 
-    internal void MarkStopped(string token)
+    internal void MarkStopped(string token, string reason)
     {
         try
         {
@@ -57,10 +63,11 @@ internal sealed class UserTokenRequestStopStore(string directoryPath)
             var path = GetMarkerPath(token);
             using var marker = new FileStream(
                 path,
-                FileMode.CreateNew,
+                FileMode.Create,
                 FileAccess.Write,
                 FileShare.Read
             );
+            marker.Write(Encoding.UTF8.GetBytes(reason));
             marker.Flush(flushToDisk: true);
         }
         catch (IOException) when (File.Exists(GetMarkerPath(token)))

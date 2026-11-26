@@ -458,7 +458,10 @@ public class DiscordClient(
 
         try
         {
-            _userTokenRequestStopStore.MarkStopped(token);
+            _userTokenRequestStopStore.MarkStopped(
+                token,
+                "Discord returned HTTP 429 for a user-token request. Further requests from this client and future runs of this fork using this token under the same OS user profile have been stopped."
+            );
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -472,6 +475,38 @@ public class DiscordClient(
         );
     }
 
+    private DiscordChatExporterException StopAfterUserTokenAuthenticationFailure()
+    {
+        if (_resolvedTokenKind != TokenKind.User)
+        {
+            return StopRequests(
+                "Discord rejected authentication. Further requests from this client have been stopped."
+            );
+        }
+
+        const string reason =
+            "Discord rejected this user token after it had already been accepted (HTTP 401). "
+            + "Further requests from this client, and future runs of this fork with this token under the same OS user profile, have been stopped. "
+            + "A rejection at this point can mean the session was revoked, the password was changed, or the account was restricted. "
+            + "Check the account's standing in Discord before using this token again. "
+            + "To allow the token again, close every running instance and delete its marker from %LOCALAPPDATA%\\DiscordChatExporter\\UserTokenRequestStops.";
+
+        try
+        {
+            _userTokenRequestStopStore.MarkStopped(token, reason);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return StopRequests(
+                "Discord rejected this user token after it had already been accepted (HTTP 401). "
+                    + "Further requests from this client have been stopped, but the local stop could not be saved across restarts. "
+                    + "Check the account's standing in Discord before using this token again."
+            );
+        }
+
+        return StopRequests(reason);
+    }
+
     private async ValueTask CheckAccountRestrictionAsync(
         HttpResponseMessage response,
         CancellationToken cancellationToken
@@ -483,9 +518,7 @@ public class DiscordClient(
         // The first 401 can be the user-token probe for a bot token. Once resolved,
         // authentication loss must stop every channel using this client.
         if (response.StatusCode == HttpStatusCode.Unauthorized && _resolvedTokenKind is not null)
-            throw StopRequests(
-                "Discord rejected authentication. Further requests from this client have been stopped."
-            );
+            throw StopAfterUserTokenAuthenticationFailure();
 
         if (response.StatusCode is not (HttpStatusCode.BadRequest or HttpStatusCode.Forbidden))
             return;
