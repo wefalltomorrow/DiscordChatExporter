@@ -16,7 +16,7 @@ using PowerKit.Extensions;
 namespace DiscordChatExporter.Core.Exporting;
 
 internal class ExportContext(
-    DiscordClient discord,
+    DiscordClient? discord,
     ExportRequest request,
     bool isOffline = false,
     ExportCache? cache = null
@@ -37,7 +37,10 @@ internal class ExportContext(
         request.ShouldReuseAssets
     );
 
-    public DiscordClient Discord { get; } = discord;
+    public DiscordClient? Discord { get; } =
+        isOffline || discord is not null
+            ? discord
+            : throw new ArgumentNullException(nameof(discord));
 
     public ExportRequest Request { get; } = request;
 
@@ -63,7 +66,10 @@ internal class ExportContext(
         CancellationToken cancellationToken = default
     )
     {
-        if (cache is not null && !IsOffline)
+        if (IsOffline)
+            return;
+
+        if (cache is not null)
         {
             foreach (
                 var channel in await cache.GetGuildChannelsAsync(
@@ -86,13 +92,13 @@ internal class ExportContext(
         }
 
         await foreach (
-            var channel in Discord.GetGuildChannelsAsync(Request.Guild.Id, cancellationToken)
+            var channel in Discord!.GetGuildChannelsAsync(Request.Guild.Id, cancellationToken)
         )
         {
             _channelsById[channel.Id] = channel;
         }
 
-        await foreach (var role in Discord.GetGuildRolesAsync(Request.Guild.Id, cancellationToken))
+        await foreach (var role in Discord!.GetGuildRolesAsync(Request.Guild.Id, cancellationToken))
         {
             _rolesById[role.Id] = role;
         }
@@ -115,7 +121,7 @@ internal class ExportContext(
 
         var channel = cache is not null
             ? await cache.GetChannelAsync(id, cancellationToken)
-            : await Discord.TryGetChannelAsync(id, cancellationToken);
+            : await Discord!.TryGetChannelAsync(id, cancellationToken);
 
         // Store the result even if it's null, to avoid re-fetching non-existing channels
         _channelsById[id] = channel;
@@ -151,13 +157,13 @@ internal class ExportContext(
         }
         else
         {
-            member = await Discord.TryGetGuildMemberAsync(Request.Guild.Id, id, cancellationToken);
+            member = await Discord!.TryGetGuildMemberAsync(Request.Guild.Id, id, cancellationToken);
 
             // User may have left the guild since they were mentioned.
             // Create a dummy member object based on the user info.
             if (member is null)
             {
-                var user = fallbackUser ?? await Discord.TryGetUserAsync(id, cancellationToken);
+                var user = fallbackUser ?? await Discord!.TryGetUserAsync(id, cancellationToken);
 
                 // User may have been deleted since they were mentioned
                 if (user is not null)

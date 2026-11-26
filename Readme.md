@@ -59,6 +59,7 @@ For user-token requests, this client applies the scheduling and stop behavior be
 - SQLite (`.db`) export format with full-text search.
 - Searchable library across previous SQLite exports.
 - Offline conversion from DiscordChatExporter JSON to HTML Dark, HTML Light, TXT, CSV, or SQLite.
+- Conversion reads local JSON without a Discord client or asset downloads. Converted HTML can still reference remote fonts, scripts, and Discord-hosted media, which a browser may request when viewing it.
 - Streaming/atomic continuation merges.
 - CSV formula neutralization.
 - Asset/media reuse and download deduplication.

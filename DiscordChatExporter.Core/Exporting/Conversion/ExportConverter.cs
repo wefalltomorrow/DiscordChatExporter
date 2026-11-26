@@ -4,7 +4,6 @@ using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using DiscordChatExporter.Core.Discord;
 using DiscordChatExporter.Core.Discord.Data;
 using DiscordChatExporter.Core.Exporting.Continuation;
 using DiscordChatExporter.Core.Exporting.Filtering;
@@ -79,7 +78,9 @@ public static class ExportConverter
             isUtcNormalizationEnabled: false
         );
 
-        var context = new ExportContext(new DiscordClient("conversion-offline"), request, true);
+        // A null client makes the no-network conversion path explicit and prevents
+        // transport initialization for a task that only reads and writes local files.
+        var context = new ExportContext(null, request, true);
         if (parsed.ConversionData is not null)
         {
             try

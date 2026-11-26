@@ -627,7 +627,7 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
             _writer.WriteStartArray("users");
 
             await foreach (
-                var user in Context.Discord.GetMessageReactionsAsync(
+                var user in Context.Discord!.GetMessageReactionsAsync(
                     Context.Request.Channel.Id,
                     message.Id,
                     reaction.Emoji,
