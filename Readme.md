@@ -44,6 +44,8 @@ Conversion does not fetch remote assets. Generated HTML blocks automatic externa
 
 Do not assume that an existing release binary contains these changes. Check the release notes and source revision for the offline-only build before using it. No account-safety claim is made for earlier releases.
 
+See the [offline-only candidate release notes](docs/Offline-Only-Release-Notes.md) for the full behavior and limitations.
+
 The project targets the .NET 10 SDK. See [release readiness](docs/ReleaseReadiness.md) for required validation and the unresolved account-risk milestone. User documentation is in [.docs](.docs/Readme.md).
 
 ## Credits
