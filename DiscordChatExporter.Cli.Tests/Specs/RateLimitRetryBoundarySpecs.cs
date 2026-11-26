@@ -121,7 +121,16 @@ public partial class RateLimitSpecs
                 new(HttpStatusCode.Forbidden) { Content = new StringContent("{\"code\":40002}") },
             ])
         );
-        using var client = new DiscordClient("test-token", RateLimitPreference.RespectAll, http);
+        var stopDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"dce-user-token-stop-{Guid.NewGuid():N}"
+        );
+        using var client = new DiscordClient(
+            "test-token",
+            RateLimitPreference.RespectAll,
+            http,
+            userTokenRequestStopStore: new UserTokenRequestStopStore(stopDirectory)
+        );
         var command = new StopTestCommand(client, wrap) { Token = "test-token" };
         using var console = new FakeConsole(Stream.Null, new MemoryStream(), new MemoryStream());
         var act = async () => await command.ExecuteAsync(console);
@@ -135,6 +144,9 @@ public partial class RateLimitSpecs
             .UseConsole(console)
             .Build();
         (await app.RunAsync([], new Dictionary<string, string>())).Should().Be(3);
+
+        if (Directory.Exists(stopDirectory))
+            Directory.Delete(stopDirectory, recursive: true);
     }
 
     [Fact]

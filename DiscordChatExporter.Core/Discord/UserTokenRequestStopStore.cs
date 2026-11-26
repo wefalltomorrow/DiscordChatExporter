@@ -7,6 +7,9 @@ namespace DiscordChatExporter.Core.Discord;
 
 internal sealed class UserTokenRequestStopStore(string directoryPath)
 {
+    internal const string DirectoryOverrideEnvironmentVariable =
+        "DISCORDCHATEXPORTER_USER_TOKEN_STOP_DIR";
+
     private const string LegacyRateLimitStopReason =
         "A previous HTTP 429 for this user token was recorded locally. The token remains blocked across restarts.";
 
@@ -14,6 +17,15 @@ internal sealed class UserTokenRequestStopStore(string directoryPath)
 
     internal static UserTokenRequestStopStore CreateDefault()
     {
+        // Lets tests, CI, and portable setups keep stop markers out of the real
+        // application-data directory. Clearing the markers is already documented,
+        // so this override does not weaken the stop itself.
+        if (
+            Environment.GetEnvironmentVariable(DirectoryOverrideEnvironmentVariable) is
+            { Length: > 0 } overrideDirectoryPath
+        )
+            return new UserTokenRequestStopStore(overrideDirectoryPath);
+
         var rootPath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         if (string.IsNullOrWhiteSpace(rootPath))
             rootPath = AppContext.BaseDirectory;
