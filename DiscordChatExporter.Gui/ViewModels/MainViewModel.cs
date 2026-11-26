@@ -94,7 +94,6 @@ public partial class MainViewModel : ViewModelBase
         {
             // Save settings
             settingsService.Save();
-
         }
 
         base.Dispose(disposing);

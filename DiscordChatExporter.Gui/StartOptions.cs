@@ -6,7 +6,6 @@ namespace DiscordChatExporter.Gui;
 public partial class StartOptions
 {
     public required string SettingsPath { get; init; }
-
 }
 
 public partial class StartOptions
