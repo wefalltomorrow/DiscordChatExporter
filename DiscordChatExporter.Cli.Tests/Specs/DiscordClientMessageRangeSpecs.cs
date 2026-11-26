@@ -81,6 +81,36 @@ public sealed class DiscordClientMessageRangeSpecs
         messages.Select(m => m.Id).Should().Equal(newest, firstInRange);
     }
 
+    [Fact]
+    public async Task Thread_starter_with_an_inaccessible_parent_message_does_not_fail_export()
+    {
+        var timestamp = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var baseId = Snowflake.FromDate(timestamp).Value;
+        var threadStarterId = new Snowflake(baseId + 1);
+        var parentMessageId = new Snowflake(baseId + 2);
+        var threadStarter = ThreadStarterMessageJson(threadStarterId, parentMessageId, timestamp);
+
+        using var httpClient = new HttpClient(
+            new QueueHttpMessageHandler([
+                CreateUserResponse(),
+                CreateMessagesResponse(threadStarter),
+                CreateMessagesResponse(threadStarter),
+                new(HttpStatusCode.Forbidden),
+                CreateMessagesResponse(),
+            ])
+        );
+        using var discord = new DiscordClient(
+            "test-token",
+            RateLimitPreference.IgnoreAll,
+            httpClient,
+            (_, _) => ValueTask.CompletedTask
+        );
+
+        var messages = await CollectAsync(discord.GetMessagesAsync(new Snowflake(123)));
+
+        messages.Should().ContainSingle().Which.Id.Should().Be(threadStarterId);
+    }
+
     private static async Task<IReadOnlyList<Message>> CollectAsync(
         IAsyncEnumerable<Message> messages
     )
@@ -138,6 +168,37 @@ public sealed class DiscordClientMessageRangeSpecs
               "attachments": [],
               "embeds": [],
               "mentions": []
+            }
+            """;
+
+    private static string ThreadStarterMessageJson(
+        Snowflake id,
+        Snowflake parentMessageId,
+        DateTimeOffset timestamp
+    ) =>
+        $$"""
+            {
+              "id": "{{id}}",
+              "type": {{(int)MessageKind.ThreadStarterMessage}},
+              "flags": 0,
+              "author": {
+                "id": "10",
+                "username": "alice",
+                "global_name": "Alice",
+                "discriminator": "0",
+                "avatar": null
+              },
+              "timestamp": "{{timestamp:O}}",
+              "content": "thread starter placeholder",
+              "attachments": [],
+              "embeds": [],
+              "mentions": [],
+              "message_reference": {
+                "type": 0,
+                "message_id": "{{parentMessageId}}",
+                "channel_id": "456",
+                "guild_id": "789"
+              }
             }
             """;
 

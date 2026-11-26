@@ -869,11 +869,22 @@ public class DiscordClient(
                         if (
                             error.ValueKind == JsonValueKind.Object
                             && error.TryGetProperty("code", out var code)
-                            && code.ValueKind == JsonValueKind.Number
-                            && code.TryGetInt32(out var value)
-                            && value == 10014
                         )
-                            return null;
+                        {
+                            var isUnknownEmoji =
+                                code.ValueKind == JsonValueKind.Number
+                                    && code.TryGetInt32(out var value)
+                                    && value == 10014
+                                || code.ValueKind == JsonValueKind.String
+                                    && string.Equals(
+                                        code.GetString(),
+                                        "10014",
+                                        StringComparison.Ordinal
+                                    );
+
+                            if (isUnknownEmoji)
+                                return null;
+                        }
                     }
                     catch (Exception ex) when (IsJsonParseFailure(ex))
                     {
@@ -1465,7 +1476,7 @@ public class DiscordClient(
             .SetQueryParameter("limit", "1")
             .Build();
 
-        var response = await TryGetJsonResponseAsync(url, cancellationToken);
+        var response = await TryGetJsonResponseAsync(url, cancellationToken, allowForbidden: true);
         if (response is null)
             return null;
 
@@ -1488,7 +1499,9 @@ public class DiscordClient(
         if (message.Reference?.MessageId is not { } messageId)
             return null;
 
-        return await TryGetMessageAsync(channelId, messageId, cancellationToken);
+        // A thread starter may refer to a parent message the current account cannot read.
+        // Keep the API-provided placeholder so one inaccessible reference does not fail the export.
+        return await TryGetMessageAsync(channelId, messageId, cancellationToken) ?? message;
     }
 
     private async ValueTask<IReadOnlyList<Message>> GetMessageProbePageAfterAsync(
