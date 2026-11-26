@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -372,6 +373,12 @@ public partial class RateLimitSpecs
     [Fact]
     public async Task Optional_json_request_throws_for_auth_failure_after_successful_token_probe()
     {
+        // A confirmed 401 now records a persistent stop, so keep it out of the
+        // real per-profile marker directory.
+        var stopDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"dce-user-token-stop-{Guid.NewGuid():N}"
+        );
         using var httpClient = new HttpClient(
             new QueueHttpMessageHandler([
                 new HttpResponseMessage(HttpStatusCode.OK),
@@ -379,16 +386,26 @@ public partial class RateLimitSpecs
             ])
         );
 
-        var discord = new DiscordClient(
-            "test-token",
-            RateLimitPreference.IgnoreAll,
-            httpClient,
-            (_, _) => ValueTask.CompletedTask
-        );
+        try
+        {
+            var discord = new DiscordClient(
+                "test-token",
+                RateLimitPreference.IgnoreAll,
+                httpClient,
+                (_, _) => ValueTask.CompletedTask,
+                new UserTokenRequestStopStore(stopDirectory)
+            );
 
-        var act = async () => await discord.TryGetUserAsync(Snowflake.Parse("123456789012345678"));
+            var act = async () =>
+                await discord.TryGetUserAsync(Snowflake.Parse("123456789012345678"));
 
-        await act.Should().ThrowAsync<DiscordChatExporterException>();
+            await act.Should().ThrowAsync<DiscordChatExporterException>();
+        }
+        finally
+        {
+            if (Directory.Exists(stopDirectory))
+                Directory.Delete(stopDirectory, recursive: true);
+        }
     }
 
     [Fact]
@@ -412,13 +429,31 @@ public partial class RateLimitSpecs
     [InlineData(HttpStatusCode.BadRequest)]
     public async Task Optional_channel_does_not_hide_other_errors(HttpStatusCode status)
     {
+        var stopDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"dce-user-token-stop-{Guid.NewGuid():N}"
+        );
         using var http = new HttpClient(
             new QueueHttpMessageHandler([new(HttpStatusCode.OK), new(status)])
         );
-        using var discord = new DiscordClient("test-token", RateLimitPreference.IgnoreAll, http);
-        var act = async () =>
-            await discord.TryGetChannelAsync(Snowflake.Parse("123456789012345678"));
-        await act.Should().ThrowAsync<DiscordChatExporterException>();
+
+        try
+        {
+            using var discord = new DiscordClient(
+                "test-token",
+                RateLimitPreference.IgnoreAll,
+                http,
+                userTokenRequestStopStore: new UserTokenRequestStopStore(stopDirectory)
+            );
+            var act = async () =>
+                await discord.TryGetChannelAsync(Snowflake.Parse("123456789012345678"));
+            await act.Should().ThrowAsync<DiscordChatExporterException>();
+        }
+        finally
+        {
+            if (Directory.Exists(stopDirectory))
+                Directory.Delete(stopDirectory, recursive: true);
+        }
     }
 
     [Fact]
@@ -482,31 +517,49 @@ public partial class RateLimitSpecs
         bool tolerated
     )
     {
+        var stopDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"dce-user-token-stop-{Guid.NewGuid():N}"
+        );
         using var http = new HttpClient(
             new QueueHttpMessageHandler([
                 new(HttpStatusCode.OK),
                 new(status) { Content = new StringContent(body) },
             ])
         );
-        using var discord = new DiscordClient("test-token", RateLimitPreference.IgnoreAll, http);
-        var count = 0;
-        var act = async () =>
+
+        try
         {
-            await foreach (
-                var user in discord.GetMessageReactionsAsync(
-                    Snowflake.Parse("123456789012345678"),
-                    Snowflake.Parse("223456789012345678"),
-                    new Emoji(Snowflake.Parse("323456789012345678"), "deleted", false)
+            using var discord = new DiscordClient(
+                "test-token",
+                RateLimitPreference.IgnoreAll,
+                http,
+                userTokenRequestStopStore: new UserTokenRequestStopStore(stopDirectory)
+            );
+            var count = 0;
+            var act = async () =>
+            {
+                await foreach (
+                    var user in discord.GetMessageReactionsAsync(
+                        Snowflake.Parse("123456789012345678"),
+                        Snowflake.Parse("223456789012345678"),
+                        new Emoji(Snowflake.Parse("323456789012345678"), "deleted", false)
+                    )
                 )
-            )
-                count++;
-        };
-        if (tolerated)
-            await act.Should().NotThrowAsync();
-        else
-            await act.Should().ThrowAsync<DiscordChatExporterException>();
-        count.Should().Be(0);
-        discord.GetRequestStats().RequestCount.Should().Be(2);
+                    count++;
+            };
+            if (tolerated)
+                await act.Should().NotThrowAsync();
+            else
+                await act.Should().ThrowAsync<DiscordChatExporterException>();
+            count.Should().Be(0);
+            discord.GetRequestStats().RequestCount.Should().Be(2);
+        }
+        finally
+        {
+            if (Directory.Exists(stopDirectory))
+                Directory.Delete(stopDirectory, recursive: true);
+        }
     }
 
     [Theory]

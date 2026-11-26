@@ -134,6 +134,14 @@ DiscordChatExporter.Domain.Exceptions.DiscordChatExporterException: Authenticati
 
 ↳ Make sure the provided token is correct.
 
+If the same token worked earlier in the run and then started failing, the client reports an HTTP 401 stop instead. It stops and blocks that token locally across restarts. A rejection at that point can mean the session was revoked, the password was changed, or the account was restricted. Check the account's standing in Discord before using the token again. On Windows, the local marker lives under %LOCALAPPDATA%\DiscordChatExporter\UserTokenRequestStops.
+
+```yml
+DiscordChatExporter.Domain.Exceptions.DiscordChatExporterException: Discord returned an HTML challenge page instead of an API response, which indicates bot mitigation.
+```
+
+↳ Discord answered with a mitigation page instead of the API. The client stops because continuing would keep sending requests into the same detector. A confirmed user token is blocked locally across restarts. Open Discord, confirm the account is in good standing, and check the network before retrying. The same stop appears when Discord reports account verification required (40002) or a Cloudflare block (40333). Clear the stored marker only after the account is in good standing, as described in the Readme.
+
 ```yml
 DiscordChatExporter.Domain.Exceptions.DiscordChatExporterException: Requested resource does not exist.
 ```
@@ -145,6 +153,8 @@ DiscordChatExporter.Domain.Exceptions.DiscordChatExporterException: Access is fo
 ```
 
 ↳ This means you don't have access to the channel.
+
+If the forbidden response comes from a channel that a message links to, the export continues. Mentions of channels you cannot read are written as `#deleted-channel`, and a thread starter whose parent channel is inaccessible is skipped so the rest of the thread still exports.
 
 ```yml
 System.Net.WebException: Error: TrustFailure ... Invalid certificate received from server.

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Threading;
@@ -161,7 +162,16 @@ public partial class RateLimitSpecs
                 new(HttpStatusCode.Forbidden) { Content = new StringContent("{\"code\":40002}") },
             ])
         );
-        using var client = new DiscordClient("test-token", RateLimitPreference.IgnoreAll, http);
+        var stopDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"dce-user-token-stop-{Guid.NewGuid():N}"
+        );
+        using var client = new DiscordClient(
+            "test-token",
+            RateLimitPreference.IgnoreAll,
+            http,
+            userTokenRequestStopStore: new UserTokenRequestStopStore(stopDirectory)
+        );
         var channel = new Channel(
             new Snowflake(1),
             ChannelKind.GuildTextChat,
@@ -178,5 +188,8 @@ public partial class RateLimitSpecs
         (await act.Should().ThrowAsync<DiscordChatExporterException>())
             .Which.IsFatal.Should()
             .BeTrue();
+
+        if (Directory.Exists(stopDirectory))
+            Directory.Delete(stopDirectory, recursive: true);
     }
 }

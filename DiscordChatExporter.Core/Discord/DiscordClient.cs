@@ -447,6 +447,23 @@ public class DiscordClient(
             throw StopRequests(reason!);
     }
 
+    private DiscordChatExporterException StopWithPersistentUserTokenMarker(
+        string reason,
+        string unsavedReason
+    )
+    {
+        try
+        {
+            _userTokenRequestStopStore.MarkStopped(token, reason);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return StopRequests(unsavedReason);
+        }
+
+        return StopRequests(reason);
+    }
+
     private DiscordChatExporterException StopAfterUserTokenRateLimit()
     {
         if (_resolvedTokenKind != TokenKind.User)
@@ -456,19 +473,84 @@ public class DiscordClient(
             );
         }
 
-        try
-        {
-            _userTokenRequestStopStore.MarkStopped(token);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        return StopWithPersistentUserTokenMarker(
+            "Discord returned HTTP 429 for a user-token request. Further requests from this client and future runs of this fork using this token under the same OS user profile have been stopped.",
+            "Discord returned HTTP 429 for a user-token request. Further requests from this client have been stopped, but the local stop could not be saved across restarts. Do not restart or resume this run."
+        );
+    }
+
+    private DiscordChatExporterException StopAfterUserTokenAuthenticationFailure()
+    {
+        if (_resolvedTokenKind != TokenKind.User)
         {
             return StopRequests(
-                "Discord returned HTTP 429 for a user-token request. Further requests from this client have been stopped, but the local stop could not be saved across restarts. Do not restart or resume this run."
+                "Discord rejected authentication. Further requests from this client have been stopped."
             );
         }
 
-        return StopRequests(
-            "Discord returned HTTP 429 for a user-token request. Further requests from this client and future runs of this fork using this token under the same OS user profile have been stopped."
+        return StopWithPersistentUserTokenMarker(
+            "Discord rejected this user token after it had already been accepted (HTTP 401). "
+                + "Further requests from this client, and future runs of this fork with this token under the same OS user profile, have been stopped. "
+                + "A rejection at this point can mean the session was revoked, the password was changed, or the account was restricted. "
+                + "Check the account's standing in Discord before using this token again. "
+                + "To allow the token again, close every running instance and delete its marker from %LOCALAPPDATA%\\DiscordChatExporter\\UserTokenRequestStops.",
+            "Discord rejected this user token after it had already been accepted (HTTP 401). "
+                + "Further requests from this client have been stopped, but the local stop could not be saved across restarts. "
+                + "Check the account's standing in Discord before using this token again."
+        );
+    }
+
+    // Discord's API answers with JSON. An HTML body means an edge challenge or a
+    // proxy interstitial, which is a bot-mitigation signal rather than an ordinary
+    // per-request failure. Continuing would keep feeding the same detector.
+    private static bool IsBotMitigationResponse(HttpResponseMessage response) =>
+        response.Headers.Contains("cf-mitigated")
+        || string.Equals(
+            response.Content.Headers.ContentType?.MediaType,
+            "text/html",
+            StringComparison.OrdinalIgnoreCase
+        );
+
+    private DiscordChatExporterException StopAfterBotMitigation()
+    {
+        if (_resolvedTokenKind != TokenKind.User)
+        {
+            return StopRequests(
+                "Discord returned an HTML challenge page instead of an API response, which indicates bot mitigation. Further requests from this client have been stopped. Review the account and network state before starting another export."
+            );
+        }
+
+        return StopWithPersistentUserTokenMarker(
+            "Discord returned an HTML challenge page instead of an API response, which indicates bot mitigation. "
+                + "Further requests from this client, and future runs of this fork with this token under the same OS user profile, have been stopped. "
+                + "Review the account's standing and the network state before using this token again. "
+                + "To allow the token again, close every running instance and delete its marker from %LOCALAPPDATA%\\DiscordChatExporter\\UserTokenRequestStops.",
+            "Discord returned an HTML challenge page instead of an API response, which indicates bot mitigation. "
+                + "Further requests from this client have been stopped, but the local stop could not be saved across restarts. "
+                + "Review the account's standing before using this token again."
+        );
+    }
+
+    private DiscordChatExporterException StopAfterAccessRestriction(
+        string detail,
+        string instruction
+    )
+    {
+        if (_resolvedTokenKind != TokenKind.User)
+        {
+            return StopRequests(
+                $"Discord stopped serving requests for this token ({detail}). Further requests from this client have been stopped. {instruction}"
+            );
+        }
+
+        return StopWithPersistentUserTokenMarker(
+            $"Discord stopped serving requests for this user token ({detail}). "
+                + "Further requests from this client, and future runs of this fork with this token under the same OS user profile, have been stopped. "
+                + $"{instruction} "
+                + "To allow the token again, close every running instance and delete its marker from %LOCALAPPDATA%\\DiscordChatExporter\\UserTokenRequestStops.",
+            $"Discord stopped serving requests for this user token ({detail}). "
+                + "Further requests from this client have been stopped, but the local stop could not be saved across restarts. "
+                + instruction
         );
     }
 
@@ -477,15 +559,16 @@ public class DiscordClient(
         CancellationToken cancellationToken
     )
     {
+        if (IsBotMitigationResponse(response))
+            throw StopAfterBotMitigation();
+
         if (response.IsSuccessStatusCode)
             return;
 
         // The first 401 can be the user-token probe for a bot token. Once resolved,
         // authentication loss must stop every channel using this client.
         if (response.StatusCode == HttpStatusCode.Unauthorized && _resolvedTokenKind is not null)
-            throw StopRequests(
-                "Discord rejected authentication. Further requests from this client have been stopped."
-            );
+            throw StopAfterUserTokenAuthenticationFailure();
 
         if (response.StatusCode is not (HttpStatusCode.BadRequest or HttpStatusCode.Forbidden))
             return;
@@ -508,13 +591,19 @@ public class DiscordClient(
 
             // https://docs.discord.com/developers/topics/opcodes-and-status-codes
             if (value == 40002)
-                throw StopRequests(
-                    "Discord requires account verification (code 40002). Further requests from this client have been stopped. Open Discord to review the account notice before starting another export."
+            {
+                throw StopAfterAccessRestriction(
+                    "account verification required, code 40002",
+                    "Open Discord to review the account notice before starting another export."
                 );
+            }
             if (value == 40333)
-                throw StopRequests(
-                    "Discord reports that Cloudflare blocked the request (code 40333). Further requests from this client have been stopped."
+            {
+                throw StopAfterAccessRestriction(
+                    "Cloudflare blocked the request, code 40333",
+                    "Review the account and network state before starting another export."
                 );
+            }
         }
         catch (Exception ex) when (IsJsonParseFailure(ex))
         {
@@ -1465,7 +1554,11 @@ public class DiscordClient(
             .SetQueryParameter("limit", "1")
             .Build();
 
-        var response = await TryGetJsonResponseAsync(url, cancellationToken);
+        // Thread starter messages point at their original message in the parent channel,
+        // which may no longer be accessible to the current account. Treat that the same
+        // as a deleted message so an inaccessible reference cannot abort the export.
+        // https://github.com/wefalltomorrow/DiscordChatExporter/issues/19
+        var response = await TryGetJsonResponseAsync(url, cancellationToken, allowForbidden: true);
         if (response is null)
             return null;
 
