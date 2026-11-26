@@ -1,6 +1,6 @@
 using System.Threading.Tasks;
+using AwesomeAssertions;
 using DiscordChatExporter.Cli.Tests.Infra;
-using FluentAssertions;
 using Xunit;
 
 namespace DiscordChatExporter.Cli.Tests.Specs;

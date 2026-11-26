@@ -2,9 +2,9 @@ using System;
 using System.IO;
 using System.Reflection;
 using System.Threading.Tasks;
+using AwesomeAssertions;
 using DiscordChatExporter.Cli.Tests.Infra;
 using DiscordChatExporter.Core.Exporting;
-using FluentAssertions;
 using Xunit;
 
 namespace DiscordChatExporter.Cli.Tests.Specs;

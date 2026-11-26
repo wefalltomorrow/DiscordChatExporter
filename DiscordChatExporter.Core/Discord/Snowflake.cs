@@ -19,14 +19,8 @@ public partial record struct Snowflake
 {
     public static Snowflake Zero { get; } = new(0);
 
-    public static Snowflake FromDate(DateTimeOffset instant)
-    {
-        var timestamp = instant.ToUnixTimeMilliseconds();
-        const long discordEpoch = 1420070400000L;
-        return timestamp <= discordEpoch
-            ? Zero
-            : new Snowflake((ulong)(timestamp - discordEpoch) << 22);
-    }
+    public static Snowflake FromDate(DateTimeOffset instant) =>
+        new((ulong)Math.Max(0L, instant.ToUnixTimeMilliseconds() - 1420070400000L) << 22);
 
     public static Snowflake? TryParse(string? value, IFormatProvider? formatProvider = null)
     {

@@ -11,10 +11,10 @@
 
   <ItemGroup>
     <PackageReference Include="AngleSharp" />
-    <PackageReference Include="WebMarkupMin.Core" />
+    <PackageReference Include="AwesomeAssertions" />
+    <PackageReference Include="FluentAssertions" />
     <PackageReference Include="coverlet.collector" PrivateAssets="all" />
     <PackageReference Include="CSharpier.MsBuild" PrivateAssets="all" />
-    <PackageReference Include="FluentAssertions" />
     <PackageReference Include="GitHubActionsTestLogger" />
     <PackageReference Include="JsonExtensions" />
     <PackageReference Include="Microsoft.Data.Sqlite" />
@@ -23,6 +23,8 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="PowerKit" />
+    <PackageReference Include="PowerKit.Json" />
+    <PackageReference Include="WebMarkupMin.Core" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
   </ItemGroup>

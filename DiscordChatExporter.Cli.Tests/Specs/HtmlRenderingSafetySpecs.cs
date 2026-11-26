@@ -292,7 +292,7 @@ public sealed class HtmlRenderingSafetySpecs : IDisposable
             false
         );
 
-        html.Should().Contain("""href="#">click</a>""");
-        html.Should().NotContain("javascript:alert");
+        html.Should().Contain("[click](javascript:alert(1))");
+        html.Should().NotContain("<a");
     }
 }

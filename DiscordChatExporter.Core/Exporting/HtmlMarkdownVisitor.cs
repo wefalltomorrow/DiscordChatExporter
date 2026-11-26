@@ -185,6 +185,12 @@ internal partial class HtmlMarkdownVisitor(
     )
     {
         var linkUrl = SanitizeHtmlLinkUrl(link.Url);
+        // Links with unsafe URLs are rendered as plain text
+        if (!Url.IsHttp(linkUrl))
+        {
+            await VisitAsync(link.Children, cancellationToken);
+            return;
+        }
 
         // Try to extract the message ID if the link points to a Discord message
         var linkedMessageId = Regex
