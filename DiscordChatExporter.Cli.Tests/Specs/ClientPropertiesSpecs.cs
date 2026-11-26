@@ -13,19 +13,20 @@ namespace DiscordChatExporter.Cli.Tests.Specs;
 
 public class ClientPropertiesSpecs
 {
-    [Fact]
-    public async Task Shared_http_client_rejects_outbound_requests()
+    [Theory]
+    [InlineData("https://discord.com/api/v10/users/@me")]
+    [InlineData("https://cdn.discordapp.com/attachments/1/2/file.png")]
+    [InlineData("https://example.com/remote-resource")]
+    [InlineData("http://127.0.0.1:8080/remote-resource")]
+    public async Task Shared_http_client_rejects_outbound_requests_for_any_host(string url)
     {
-        using var request = new HttpRequestMessage(
-            HttpMethod.Get,
-            "https://discord.com/api/v10/users/@me"
-        );
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
 
         var act = async () => await Http.Client.SendAsync(request);
 
         await act.Should()
             .ThrowAsync<HttpRequestException>()
-            .WithMessage("Discord network access is disabled in this build.");
+            .WithMessage("Outbound network access is disabled in this build.");
     }
 
     [Theory]

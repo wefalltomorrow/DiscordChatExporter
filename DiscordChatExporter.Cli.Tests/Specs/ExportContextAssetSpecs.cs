@@ -58,7 +58,7 @@ public sealed class ExportContextAssetSpecs : IDisposable
 
         await act.Should()
             .ThrowAsync<HttpRequestException>()
-            .WithMessage("Discord network access is disabled in this build.");
+            .WithMessage("Outbound network access is disabled in this build.");
         Directory.GetFiles(_dir).Should().BeEmpty();
     }
 

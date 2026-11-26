@@ -47,7 +47,7 @@ public static class Http
             CancellationToken cancellationToken
         ) =>
             Task.FromException<HttpResponseMessage>(
-                new HttpRequestException("Discord network access is disabled in this build.")
+                new HttpRequestException("Outbound network access is disabled in this build.")
             );
     }
 
